@@ -3,35 +3,62 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
-#define DEFAULT_PORT "58054"
-#define MAX_IP_LEN 128
+#include "args.h"
 
-typedef struct {
-    char *port;
-    char ip[MAX_IP_LEN];
-} args_t;
+struct addrinfo *get_server_address(const args_t *args, int socktype) {
+    struct addrinfo hints, *res;
+    int errcode;
 
-args_t parse_args(int argc, char **argv) {
-    args_t args;
-    args.port = DEFAULT_PORT;
+    // Set the hints
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;        
+    hints.ai_socktype = socktype;
 
-    if (gethostname(args.ip, MAX_IP_LEN) < 0)
-        fprintf(stderr, "error: %s\n", strerror(errno));
+    errcode = getaddrinfo(args->ip, args->port, &hints, &res);
+    if (errcode != 0) exit(EXIT_FAILURE);
 
-    for (int i = 1; i < argc - 1; i += 2) {
-        if (!strcmp(argv[i], "-n")) {
-            strncpy(args.ip, argv[i + 1], MAX_IP_LEN);
-        } else if (!strcmp(argv[i], "-p")) {
-            args.port = argv[i + 1];
-        }
-    }
+    return res;
+}
 
-    return args;
+void udp_send(int fd, const char *buffer, const struct addrinfo *addr) {
+    ssize_t n = sendto(fd, buffer, sizeof buffer, 0, addr->ai_addr, addr->ai_addrlen);
+    if (n == -1)
+        exit(EXIT_FAILURE);
+}
+
+ssize_t udp_receive(int fd, char *buffer) {
+    struct sockaddr_in addr;
+    socklen_t addrlen = sizeof addr;
+
+    ssize_t n = recvfrom(fd, buffer, sizeof buffer, 0, (struct sockaddr*) &addr, &addrlen);
+    if (n == -1)
+        exit(EXIT_FAILURE);
+    
+    return n;
 }
 
 int main(int argc, char **argv) {
     args_t args = parse_args(argc, argv);
+
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd == -1) exit(EXIT_FAILURE);
+    struct addrinfo *res = get_server_address(&args, SOCK_DGRAM);
+    
+    udp_send(fd, "Hello!\n", res);
+    
+    char buffer[128];
+    ssize_t n = udp_receive(fd, buffer);
+
+    write(1, "echo: ", 6);
+    write(1, buffer, n);
+
+    freeaddrinfo(res);
+    close(fd);
     
     return 0;
 }

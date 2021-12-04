@@ -4,14 +4,14 @@ CFLAGS=-Wall
 .PHONY: all clean
 
 all: User DS
-User: client/main.c
+User: client/main.c client/args.o
 DS: server/main.c
 
 User DS:
 	$(CC) $(CFLAGS) $^ -o $@
 
-%.o: %.c %.h
-	$(CC) $(CFLAGS) -c $^
+%.o: %.c
+	$(CC) $(CFLAGS) -c $^ -o $@
 
 clean:
-	rm *.o User DS
+	@rm -rf */*.o User DS
