@@ -1,45 +1,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <string.h>
 
-#include "args.h"
+#include "../common/common.h"
 
-struct addrinfo *get_server_address(const args_t *args, int socktype) {
-    struct addrinfo hints, *res;
-    int errcode;
+#define DEFAULT_PORT "58054"
 
-    // Set the hints
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET;        
-    hints.ai_socktype = socktype;
+typedef struct {
+    char *port;
+    char *ip;
+} args_t;
 
-    errcode = getaddrinfo(args->ip, args->port, &hints, &res);
-    if (errcode != 0) exit(EXIT_FAILURE);
+args_t parse_args(int argc, char **argv) {
+    args_t args;
+    args.port = DEFAULT_PORT;
+    args.ip = NULL;
 
-    return res;
-}
+    for (int i = 1; i < argc - 1; i += 2) {
+        if (strcmp(argv[i], "-n") == 0) {
+            args.ip = argv[i + 1];
+        } else if (strcmp(argv[i], "-p") == 0) {
+            args.port = argv[i + 1];
+        }
+    }
 
-void udp_send(int fd, const char *buffer, const struct addrinfo *addr) {
-    ssize_t n = sendto(fd, buffer, sizeof buffer, 0, addr->ai_addr, addr->ai_addrlen);
-    if (n == -1)
-        exit(EXIT_FAILURE);
-}
-
-ssize_t udp_receive(int fd, char *buffer) {
-    struct sockaddr_in addr;
-    socklen_t addrlen = sizeof addr;
-
-    ssize_t n = recvfrom(fd, buffer, sizeof buffer, 0, (struct sockaddr*) &addr, &addrlen);
-    if (n == -1)
-        exit(EXIT_FAILURE);
-    
-    return n;
+    return args;
 }
 
 int main(int argc, char **argv) {
@@ -47,12 +38,19 @@ int main(int argc, char **argv) {
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1) exit(EXIT_FAILURE);
-    struct addrinfo *res = get_server_address(&args, SOCK_DGRAM);
+    struct addrinfo *res = get_server_address(args.ip, args.port, SOCK_DGRAM);
     
-    udp_send(fd, "Hello!\n", res);
+    ssize_t n = udp_client_send(fd, "REG 54323 password\n", res);
+    printf("%zd\n", n);
     
     char buffer[128];
-    ssize_t n = udp_receive(fd, buffer);
+    n = udp_client_receive(fd, buffer);
+
+    write(1, "echo: ", 6);
+    write(1, buffer, n);
+
+    udp_client_send(fd, "UNR 54323 password\n", res);
+    n = udp_client_receive(fd, buffer);
 
     write(1, "echo: ", 6);
     write(1, buffer, n);

@@ -4,8 +4,8 @@ CFLAGS=-Wall
 .PHONY: all clean
 
 all: User DS
-User: client/main.c client/args.o
-DS: server/main.c
+User: client/main.c common/common.o
+DS: server/main.c common/common.o
 
 User DS:
 	$(CC) $(CFLAGS) $^ -o $@
