@@ -16,17 +16,21 @@
 #define MAX_LINE 273
 #define MAX_MESSAGE 39
 #define MAX_RESPONSE 3275
-#define EXIT 0
-#define LOCAL 1
-#define REMOTE 2
 
-char uid[6] = {0};
-char pass[9] = {0};
+typedef enum {
+    EXIT,
+    LOCAL,
+    REMOTE
+} command_type_t;
 
 typedef struct {
     char *port;
     char *ip;
 } args_t;
+
+char uid[6] = {0};
+char pass[9] = {0};
+bool logged_in = false;
 
 args_t parse_args(int argc, char **argv) {
     args_t args;
@@ -44,7 +48,7 @@ args_t parse_args(int argc, char **argv) {
     return args;
 }
 
-int process_command(int fd, struct addrinfo *res_udp, char *response) {
+command_type_t process_command(int fd, struct addrinfo *res_udp, char *response) {
     char raw_input[MAX_LINE];
     char command[MAX_COMMAND];
     int inc;
@@ -58,7 +62,8 @@ int process_command(int fd, struct addrinfo *res_udp, char *response) {
     if (strcmp(command, "exit") == 0)
         return EXIT;
     if (strcmp(command, "su") == 0 || strcmp(command, "showuid") == 0) {
-        printf("Your UID is %s\n", uid);
+        if (logged_in)
+            printf("Your UID is %s\n", uid);
         return LOCAL;
     }
     
@@ -83,10 +88,18 @@ int process_command(int fd, struct addrinfo *res_udp, char *response) {
         memset(pass, 0, sizeof pass);
     } else if (strcmp(command, "gl") == 0 || strcmp(command, "groups") == 0) {
         strcpy(message, "GLS\n");
+    } else if (strcmp(command, "subscribe") == 0 || strcmp(command, "s") == 0) {
+        char gid[3], name[25];
+        sscanf(raw_input + inc, "%2s%24s", gid, name);
+        if (!logged_in)
+            return LOCAL;
+            
+        sprintf(message, "GSR %s %s %s\n", uid, gid, name);
     }
     
     ssize_t n = udp_client_send(fd, message, res_udp);
     n = udp_client_receive(fd, response, MAX_RESPONSE);
+
     return REMOTE;
 }
 
@@ -113,15 +126,21 @@ void process_reply(char *reply) {
     } else if (strcmp(prefix, "RLO") == 0) {
         char status[4];
         sscanf(reply + 4, "%3s", status);
-        if (strcmp(status, "OK") == 0)
+        if (strcmp(status, "OK") == 0) {
             printf("You are now logged in\n");
-        else if (strcmp(status, "NOK") == 0)
+            logged_in = true;
+        }
+        else if (strcmp(status, "NOK") == 0) {
             printf("Login failed\n");
+            logged_in = false;
+        }
     } else if (strcmp(prefix, "ROU") == 0) {
         char status[4];
         sscanf(reply + 4, "%3s", status);
-        if (strcmp(status, "OK") == 0)
+        if (strcmp(status, "OK") == 0) {
             printf("You are now logged out\n");
+            logged_in = false;
+        }
     } else if (strcmp(prefix, "RGL") == 0) {
         int n;
         char *cursor = reply + 4;
@@ -134,6 +153,13 @@ void process_reply(char *reply) {
             cursor += inc;
             printf("Group %s - \"%s\"\n", gid, name);
         }
+    } else if (strcmp(prefix, "RGS") == 0) {
+        char status[8];
+        sscanf(reply + 4, "%7s", status);
+        if (strcmp(status, "OK") == 0) {
+            printf("You are now subscribed\n");
+        }
+        printf("%s", reply);
     }
 }
 
@@ -145,14 +171,13 @@ int main(int argc, char **argv) {
     struct addrinfo *res = get_server_address(args.ip, args.port, SOCK_DGRAM);
 
     while (true) {
-        write(1, "> ", 2);
+        printf("> ");
         char reply[MAX_RESPONSE];
-        int command_type = process_command(fd, res, reply);
-        if (command_type == EXIT)
+        command_type_t type = process_command(fd, res, reply);
+
+        if (type == EXIT)
             break;
-        else if (command_type == LOCAL)
-            continue;
-        else if (command_type == REMOTE)
+        else if (type == REMOTE)
             process_reply(reply);
     }
 
