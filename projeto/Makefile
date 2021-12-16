@@ -8,7 +8,7 @@ User: client/main.c common/common.o
 DS: server/main.c common/common.o
 
 User DS:
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -g -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@
