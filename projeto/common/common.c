@@ -31,18 +31,18 @@ ssize_t udp_client_send(int fd, const char *buffer, const struct addrinfo *addr)
     return udp_send(fd, buffer, addr->ai_addr, addr->ai_addrlen);
 }
 
-ssize_t udp_receive(int fd, char *buffer, struct sockaddr_in* addr, socklen_t *addrlen) {
+ssize_t udp_receive(int fd, char *buffer, int size, struct sockaddr_in* addr, socklen_t *addrlen) {
     *addrlen = sizeof addr;
 
-    ssize_t n = recvfrom(fd, buffer, sizeof buffer, 0, (struct sockaddr*) addr, addrlen);
+    ssize_t n = recvfrom(fd, buffer, size, 0, (struct sockaddr*) addr, addrlen);
     if (n == -1)
         exit(EXIT_FAILURE);
     
     return n;
 }
 
-ssize_t udp_client_receive(int fd, char *buffer) {
+ssize_t udp_client_receive(int fd, char *buffer, int size) {
     struct sockaddr_in addr;
     socklen_t addrlen;
-    return udp_receive(fd, buffer, &addr, &addrlen);
+    return udp_receive(fd, buffer, size, &addr, &addrlen);
 }

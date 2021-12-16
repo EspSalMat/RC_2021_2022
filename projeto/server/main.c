@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
     if (n == -1) exit(EXIT_FAILURE);
 
     while (true) {
-        n = udp_receive(fd, buffer, &addr, &addrlen);
+        n = udp_receive(fd, buffer, sizeof buffer, &addr, &addrlen);
         write(1, "received: ", 10);
         write(1, buffer, n);
         udp_send(fd, buffer, (struct sockaddr *) &addr, addrlen);
