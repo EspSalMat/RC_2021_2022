@@ -13,7 +13,27 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: clean 
-      run: cd projeto && make clean
-    - name: make
+    - name: Build
       run: cd projeto && make
+    - name: Bundle
+      run: cd projeto && make proj_54.zip
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}  
+        asset_path: projeto/proj_54.zip
+        asset_name: proj_54.zip
+        asset_content_type: application/zip
