@@ -95,6 +95,16 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *response)
             return LOCAL;
             
         sprintf(message, "GSR %s %s %s\n", uid, gid, name);
+    } else if (strcmp(command, "unsubscribe") == 0) {
+        char gid[3];
+        sscanf(raw_input + inc, "%2s", gid);
+        if (!logged_in)
+            return LOCAL;
+        sprintf(message, "GUR %s %s\n", uid, gid);
+    } else if (strcmp(command, "my_groups") == 0 || strcmp(command, "mgl") == 0) {
+        if (!logged_in)
+            return LOCAL;
+        sprintf(message, "GLM %s\n", uid);
     }
     
     ssize_t n = udp_client_send(fd, message, res_udp);
@@ -160,6 +170,25 @@ void process_reply(char *reply) {
             printf("You are now subscribed\n");
         }
         printf("%s", reply);
+    } else if (strcmp(prefix, "RGU") == 0) {
+        char status[5];
+        sscanf(reply + 4, "%4s", status);
+        if (strcmp(status, "OK") == 0) {
+            printf("Group successfully unsubscribed\n");
+        }
+        printf("%s", reply);
+    } else if (strcmp(prefix, "RGM") == 0) {
+        int n;
+        char *cursor = reply + 4;
+        int inc;
+        sscanf(reply + 4, "%d%n", &n, &inc);
+        cursor += inc + 1;
+        for (size_t i = 0; i < n; i++) {
+            char gid[3], name[25], mid[5];
+            sscanf(cursor, "%2s%24s%4s%n", gid, name, mid, &inc);
+            cursor += inc;
+            printf("Group %s - \"%s\"\n", gid, name);
+        }
     }
 }
 
