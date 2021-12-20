@@ -4,4 +4,5 @@ DS
 .DS_Store
 .vscode/
 .ccls-cache/
-*.dySYM/
+DS.dSYM/
+User.dSYM/
