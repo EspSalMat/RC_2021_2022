@@ -1,13 +1,13 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "../common/common.h"
 
@@ -17,11 +17,7 @@
 #define MAX_MESSAGE 39
 #define MAX_RESPONSE 3275
 
-typedef enum {
-    EXIT,
-    LOCAL,
-    REMOTE
-} command_type_t;
+typedef enum { EXIT, LOCAL, REMOTE } command_type_t;
 
 typedef struct {
     char *port;
@@ -56,9 +52,9 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *response)
     if (fgets(raw_input, sizeof raw_input, stdin) == NULL) {
         exit(EXIT_FAILURE);
     }
-    
+
     sscanf(raw_input, "%11s%n", command, &inc);
-    
+
     if (strcmp(command, "exit") == 0)
         return EXIT;
     if (strcmp(command, "su") == 0 || strcmp(command, "showuid") == 0) {
@@ -66,7 +62,7 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *response)
             printf("Your UID is %s\n", uid);
         return LOCAL;
     }
-    
+
     char message[MAX_MESSAGE];
     if (strcmp(command, "reg") == 0) {
         char arg1[6], arg2[9];
@@ -93,7 +89,7 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *response)
         sscanf(raw_input + inc, "%2s%24s", gid, name);
         if (!logged_in)
             return LOCAL;
-            
+
         sprintf(message, "GSR %s %s %s\n", uid, gid, name);
     } else if (strcmp(command, "unsubscribe") == 0) {
         char gid[3];
@@ -106,7 +102,7 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *response)
             return LOCAL;
         sprintf(message, "GLM %s\n", uid);
     }
-    
+
     ssize_t n = udp_client_send(fd, message, res_udp);
     n = udp_client_receive(fd, response, MAX_RESPONSE);
 
@@ -116,7 +112,7 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *response)
 void process_reply(char *reply) {
     char prefix[4];
     sscanf(reply, "%3s", prefix);
-    //printf("%s\n", reply);
+    // printf("%s\n", reply);
     if (strcmp(prefix, "RRG") == 0) {
         char status[4];
         sscanf(reply + 4, "%3s", status);
@@ -139,8 +135,7 @@ void process_reply(char *reply) {
         if (strcmp(status, "OK") == 0) {
             printf("You are now logged in\n");
             logged_in = true;
-        }
-        else if (strcmp(status, "NOK") == 0) {
+        } else if (strcmp(status, "NOK") == 0) {
             printf("Login failed\n");
             logged_in = false;
         }
@@ -196,7 +191,8 @@ int main(int argc, char **argv) {
     args_t args = parse_args(argc, argv);
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd == -1) exit(EXIT_FAILURE);
+    if (fd == -1)
+        exit(EXIT_FAILURE);
     struct addrinfo *res = get_server_address(args.ip, args.port, SOCK_DGRAM);
 
     while (true) {
