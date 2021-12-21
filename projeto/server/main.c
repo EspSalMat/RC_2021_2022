@@ -44,6 +44,7 @@ bool register_user(const char *uid, const char *pass) {
     sprintf(user_dirname, "USERS/%s", uid);
     sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
 
+    // TODO: Move this to when server starts
     // Make sure the USERS directory exists
     mkdir("USERS", 0700);
 
@@ -139,11 +140,6 @@ int main(int argc, char **argv) {
                 } else {
                     sprintf(response, "RUN NOK\n");
                 }
-            } else if (strcmp(command, "UNR") == 0) {
-                char uid[6] = {0};
-                char pass[9] = {0};
-                sscanf(buffer + 4, "%5s%8s", uid, pass);
-                sprintf(response, "RUN NOK\n");
             }
 
             udp_send(fd, response, (struct sockaddr *)&addr, addrlen);
