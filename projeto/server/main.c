@@ -74,14 +74,11 @@ bool unregister_user(const char *uid, const char *pass) {
 
     fscanf(pass_file, "%8s", realpass);
     fclose(pass_file);
-    realpass[8] = '\n';
-
-    printf("%s vs %s\n", pass, realpass);
 
     if (strcmp(pass, realpass) != 0)
         return false;
 
-    if (rmdir(user_dirname) == 0)
+    if (unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
         return true;
 
     return false;
