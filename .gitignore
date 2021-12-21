@@ -6,3 +6,7 @@ DS
 .ccls-cache/
 DS.dSYM/
 User.dSYM/
+
+# Data directories used by DS
+projeto/USERS/
+projeto/GROUPS/
