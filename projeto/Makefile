@@ -17,7 +17,7 @@ proj_54.zip: clean
 	rm -rf tmp
 
 User DS:
-	$(CC) $(CFLAGS) $^ -g -o $@
+	$(CC) $(CFLAGS) $^ -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@
