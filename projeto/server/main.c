@@ -54,11 +54,21 @@ int main(int argc, char **argv) {
     if (n == -1)
         exit(EXIT_FAILURE);
 
+    fd_set current_sockets, ready_sockets;
+    FD_ZERO(&current_sockets);
+    FD_SET(fd, &current_sockets);
+
     while (true) {
-        n = udp_receive(fd, buffer, sizeof buffer, &addr, &addrlen);
-        write(1, "received: ", 10);
-        write(1, buffer, n);
-        udp_send(fd, buffer, (struct sockaddr *)&addr, addrlen);
+        ready_sockets = current_sockets;
+        if (select(FD_SETSIZE, &ready_sockets, NULL, NULL, NULL) < 0)
+            exit(EXIT_FAILURE);
+
+        if (FD_ISSET(fd, &ready_sockets)) {
+            n = udp_receive(fd, buffer, sizeof buffer, &addr, &addrlen);
+            write(1, "received: ", 10);
+            write(1, buffer, n);
+            udp_send(fd, buffer, (struct sockaddr *)&addr, addrlen);
+        }
     }
 
     freeaddrinfo(res);
