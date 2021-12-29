@@ -1,7 +1,10 @@
+#include <errno.h>
 #include <netdb.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+
+#include "common.h"
 
 struct addrinfo *get_server_address(const char *ip, const char *port, int socktype) {
     struct addrinfo hints, *res;
@@ -32,17 +35,25 @@ ssize_t udp_client_send(int fd, const char *buffer, const struct addrinfo *addr)
     return udp_send(fd, buffer, addr->ai_addr, addr->ai_addrlen);
 }
 
-ssize_t udp_receive(int fd, char *buffer, int size, struct sockaddr_in *addr, socklen_t *addrlen) {
+response_t udp_receive(int fd, char *buffer, int size, struct sockaddr_in *addr,
+                       socklen_t *addrlen) {
     *addrlen = sizeof addr;
+    response_t res;
+    res.timeout = false;
 
-    ssize_t n = recvfrom(fd, buffer, size, 0, (struct sockaddr *)addr, addrlen);
-    if (n == -1)
+    res.bytes = recvfrom(fd, buffer, size, 0, (struct sockaddr *)addr, addrlen);
+    if (errno == EWOULDBLOCK) {
+        res.timeout = true;
+        return res;
+    }
+
+    if (res.bytes == -1)
         exit(EXIT_FAILURE);
 
-    return n;
+    return res;
 }
 
-ssize_t udp_client_receive(int fd, char *buffer, int size) {
+response_t udp_client_receive(int fd, char *buffer, int size) {
     struct sockaddr_in addr;
     socklen_t addrlen;
     return udp_receive(fd, buffer, size, &addr, &addrlen);

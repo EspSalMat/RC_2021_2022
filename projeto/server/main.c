@@ -55,9 +55,9 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
 
     while (true) {
-        n = udp_receive(fd, buffer, sizeof buffer, &addr, &addrlen);
+        response_t res = udp_receive(fd, buffer, sizeof buffer, &addr, &addrlen);
         write(1, "received: ", 10);
-        write(1, buffer, n);
+        write(1, buffer, res.bytes);
         udp_send(fd, buffer, (struct sockaddr *)&addr, addrlen);
     }
 
