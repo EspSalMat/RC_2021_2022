@@ -17,18 +17,24 @@
 #define MAX_MESSAGE 39
 #define MAX_REPLY 3275
 
-typedef enum { EXIT, LOCAL, REMOTE } command_type_t;
+typedef enum { EXIT, LOCAL, UDP, TCP } command_type_t;
 
 typedef struct {
     char *port;
     char *ip;
 } args_t;
 
+typedef struct {
+    int udp_fd;
+    struct addrinfo *udp_addr;
+    struct addrinfo *tcp_addr;
+} sockets_t;
+
 char uid[6] = {0};
 char pass[9] = {0};
+bool logged_in = false;
 char active_group[3] = {0};
 bool group_selected = false;
-bool logged_in = false;
 
 args_t parse_args(int argc, char **argv) {
     args_t args;
@@ -58,14 +64,14 @@ command_type_t register_user(char *args, char *message) {
     char id[6], password[9];
     sscanf(args, "%s%s", id, password);
     sprintf(message, "REG %s %s\n", id, password);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t unregister_user(char *args, char *message) {
     char id[6], password[9];
     sscanf(args, "%5s%8s", id, password);
     sprintf(message, "UNR %s %s\n", id, password);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t login(char *args, char *message) {
@@ -74,19 +80,19 @@ command_type_t login(char *args, char *message) {
     strncpy(uid, id, 5);
     strncpy(pass, password, 8);
     sprintf(message, "LOG %s %s\n", id, password);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t logout(char *args, char *message) {
     sprintf(message, "OUT %s %s\n", uid, pass);
     memset(uid, 0, sizeof uid);
     memset(pass, 0, sizeof pass);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t list_groups(char *message) {
     strcpy(message, "GLS\n");
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t subscribe_group(char *args, char *message) {
@@ -98,7 +104,7 @@ command_type_t subscribe_group(char *args, char *message) {
     }
     sscanf(args, "%2d%24s", &gid, name);
     sprintf(message, "GSR %s %02d %s\n", uid, gid, name);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t unsubscribe_group(char *args, char *message) {
@@ -109,7 +115,7 @@ command_type_t unsubscribe_group(char *args, char *message) {
     }
     sscanf(args, "%2d", &gid);
     sprintf(message, "GUR %s %02d\n", uid, gid);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t list_user_groups(char *message) {
@@ -118,7 +124,7 @@ command_type_t list_user_groups(char *message) {
         return LOCAL;
     }
     sprintf(message, "GLM %s\n", uid);
-    return REMOTE;
+    return UDP;
 }
 
 command_type_t select_group(char *args) {
@@ -141,13 +147,27 @@ command_type_t show_gid() {
         if (group_selected)
             printf("%s\n", active_group);
         else
-            printf("No group selected\n");
+            printf("You don't have a group selected\n");
     }
-        
+
     return LOCAL;
 }
 
-command_type_t process_command(int fd, struct addrinfo *res_udp, char *reply) {
+command_type_t group_users_list(char *message) {
+    if (!logged_in) {
+        printf("You are not logged in\n");
+        return LOCAL;
+    } else if (!group_selected) {
+        printf("You don't have a group selected\n");
+        return LOCAL;
+    }
+
+    sprintf(message, "ULS %s\n", active_group);
+
+    return TCP;
+}
+
+command_type_t process_command(sockets_t sockets, char *reply) {
     char raw_input[MAX_LINE];
     char command[MAX_COMMAND];
     int command_length;
@@ -158,7 +178,8 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *reply) {
     sscanf(raw_input, "%11s%n", command, &command_length);
 
     char message[MAX_MESSAGE];
-    command_type_t command_type;
+    command_type_t command_type = LOCAL;
+
     if (strcmp(command, "exit") == 0)
         command_type = EXIT;
     else if (strcmp(command, "su") == 0 || strcmp(command, "showuid") == 0)
@@ -183,19 +204,84 @@ command_type_t process_command(int fd, struct addrinfo *res_udp, char *reply) {
         command_type = select_group(raw_input + command_length + 1);
     else if (strcmp(command, "showgid") == 0 || strcmp(command, "sg") == 0)
         command_type = show_gid();
-    
-    if (command_type == REMOTE) {
+    else if (strcmp(command, "ulist") == 0 || strcmp(command, "ul") == 0)
+        command_type = group_users_list(message);
+
+    if (command_type == UDP) {
         ssize_t n;
-        response_t res; 
+        response_t res;
         unsigned int attempts = 0;
 
         do {
-            printf("BORA TENTAR\n");
-            n = udp_client_send(fd, message, res_udp);
-            res = udp_client_receive(fd, reply, MAX_REPLY);
-            if (res.timeout)
-                printf("FALHOU CARALHO\n");
-        } while(res.timeout && (++attempts) < 3);
+            n = udp_client_send(sockets.udp_fd, message, sockets.udp_addr);
+            res = udp_client_receive(sockets.udp_fd, reply, MAX_REPLY);
+        } while (res.timeout && (++attempts) < 3);
+    } else if (command_type == TCP) {
+        // TODO: make sure the "buffer" is empty (unlink first)
+        FILE *tcp_buffer = fopen("tcp_buffer.txt", "w+");
+        if (tcp_buffer == NULL)
+            exit(EXIT_FAILURE);
+
+        int tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (tcp_fd == -1)
+            exit(EXIT_FAILURE);
+
+        int n = connect(tcp_fd, sockets.tcp_addr->ai_addr, sockets.tcp_addr->ai_addrlen);
+        if (n == -1)
+            exit(EXIT_FAILURE);
+
+        ssize_t nbytes, nleft, nwritten, nread;
+        char *ptr = message;
+        for (nbytes = 0; ptr[nbytes - 1] != '\n'; nbytes++)
+            ;
+        nleft = nbytes;
+
+        while (nleft > 0) {
+            nwritten = write(tcp_fd, ptr, nleft);
+            if (nwritten <= 0)
+                exit(1);
+            nleft -= nwritten;
+            ptr += nwritten;
+        }
+
+        // Read
+        ptr = reply;
+        nread = 0;
+
+        while (reply[nread] != '\n') {
+            ssize_t n = read(tcp_fd, ptr, MAX_REPLY);
+
+            if (n == -1)
+                exit(1);
+            else if (n == 0)
+                break;
+
+            fwrite(ptr, n, 1, tcp_buffer);
+            ptr += n;
+            nread += n;
+        }
+
+        fflush(tcp_buffer);
+        fseek(tcp_buffer, 0, SEEK_SET);
+        char prefix[4], status[4];
+        fscanf(tcp_buffer, "%3s%3s", prefix, status);
+        if (strcmp(prefix, "RUL") == 0) {
+            if (strcmp(status, "OK") == 0) {
+                char group_name[25];
+                char user_id[6];
+                fscanf(tcp_buffer, "%24s", group_name);
+                printf("%s\n", group_name);
+                while(fscanf(tcp_buffer, "%5s", user_id) > 0)
+                    printf("%s\n", user_id);
+            } else if (strcmp(status, "NOK") == 0) {
+                printf("Failed to list subscribed users\n");
+            }
+        }
+
+
+
+        fclose(tcp_buffer);
+        close(tcp_fd);
     }
 
     return command_type;
@@ -251,9 +337,9 @@ void show_groups(char *reply) {
     char *cursor = reply + 4;
     int inc;
     sscanf(reply + 4, "%d%n", &n, &inc);
-    if (n == 0) 
+    if (n == 0)
         printf("No groups to list\n");
-    
+
     cursor += inc + 1;
     for (size_t i = 0; i < n; i++) {
         char gid[3], name[25], mid[5];
@@ -272,8 +358,7 @@ void subscribe_group_status(char *reply) {
         int gid;
         sscanf(reply + 8, "%d", &gid);
         printf("New group created with ID %02d\n", gid);
-    }
-    else if (strcmp(status, "E_USR") == 0)
+    } else if (strcmp(status, "E_USR") == 0)
         printf("Invalid user id\n");
     else if (strcmp(status, "E_GRP") == 0)
         printf("Invalid group id\n");
@@ -302,7 +387,7 @@ void show_subscribed_groups(char *reply) {
         show_groups(reply);
 }
 
-void process_reply(char *reply) {
+void process_udp_reply(char *reply) {
     char prefix[4];
     sscanf(reply, "%3s", prefix);
     if (strcmp(prefix, "RRG") == 0)
@@ -320,38 +405,44 @@ void process_reply(char *reply) {
     else if (strcmp(prefix, "RGU") == 0)
         unsubscribe_group_status(reply);
     else if (strcmp(prefix, "RGM") == 0)
-        show_groups(reply);
+        show_subscribed_groups(reply);
 }
 
 void set_timeout(int fd, int sec) {
     struct timeval timeout;
-    memset((char *)&timeout,0,sizeof(timeout));
+    memset((char *)&timeout, 0, sizeof(timeout));
     timeout.tv_sec = 2;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout);
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout);
 }
 
 int main(int argc, char **argv) {
     args_t args = parse_args(argc, argv);
+    sockets_t sockets;
 
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd == -1)
+    sockets.udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockets.udp_fd == -1)
         exit(EXIT_FAILURE);
-    set_timeout(fd, 10);
+    set_timeout(sockets.udp_fd, 10);
 
-    struct addrinfo *res = get_server_address(args.ip, args.port, SOCK_DGRAM);
+    sockets.udp_addr = get_server_address(args.ip, args.port, SOCK_DGRAM);
+    sockets.tcp_addr = get_server_address(args.ip, args.port, SOCK_STREAM);
 
     while (true) {
         printf("> ");
         char reply[MAX_REPLY];
-        command_type_t type = process_command(fd, res, reply);
+        command_type_t type = process_command(sockets, reply);
 
         if (type == EXIT)
             break;
-        else if (type == REMOTE)
-            process_reply(reply);
+        else if (type == UDP)
+            process_udp_reply(reply);
     }
 
-    freeaddrinfo(res);
-    close(fd);
+    freeaddrinfo(sockets.udp_addr);
+    freeaddrinfo(sockets.tcp_addr);
+    close(sockets.udp_fd);
+
+    unlink("tcp_buffer.txt");
+
     return 0;
 }
