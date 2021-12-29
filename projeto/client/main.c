@@ -167,6 +167,24 @@ command_type_t group_users_list(char *message) {
     return TCP;
 }
 
+command_type_t post(char *args, char *message) {
+    if (!logged_in) {
+        printf("You are not logged in\n");
+        return LOCAL;
+    } else if (!group_selected) {
+        printf("You don't have a group selected\n");
+        return LOCAL;
+    }
+
+    char text[241];
+    text[240] = '\0';
+    int text_size;
+    sscanf(args, "\"%[^\"]\"%n", text, &text_size);
+    sprintf(message, "PST %s %s %d \"%s\"\n", uid, active_group, text_size, text);
+
+    return TCP;
+}
+
 command_type_t process_command(sockets_t sockets, char *reply) {
     char raw_input[MAX_LINE];
     char command[MAX_COMMAND];
@@ -206,6 +224,8 @@ command_type_t process_command(sockets_t sockets, char *reply) {
         command_type = show_gid();
     else if (strcmp(command, "ulist") == 0 || strcmp(command, "ul") == 0)
         command_type = group_users_list(message);
+    else if (strcmp(command, "post") == 0)
+        command_type = post(raw_input + command_length + 1, message);
 
     if (command_type == UDP) {
         ssize_t n;
@@ -232,8 +252,7 @@ command_type_t process_command(sockets_t sockets, char *reply) {
 
         ssize_t nbytes, nleft, nwritten, nread;
         char *ptr = message;
-        for (nbytes = 0; ptr[nbytes - 1] != '\n'; nbytes++)
-            ;
+        nbytes = strlen(message);
         nleft = nbytes;
 
         while (nleft > 0) {
@@ -277,8 +296,6 @@ command_type_t process_command(sockets_t sockets, char *reply) {
                 printf("Failed to list subscribed users\n");
             }
         }
-
-
 
         fclose(tcp_buffer);
         close(tcp_fd);
