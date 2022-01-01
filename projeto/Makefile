@@ -4,7 +4,7 @@ CFLAGS=-Wall
 .PHONY: all clean
 
 all: User DS
-User: client/main.c common/common.o
+User: client/main.c client/commands.c common/common.o
 DS: server/main.c common/common.o
 
 proj_54.zip: clean

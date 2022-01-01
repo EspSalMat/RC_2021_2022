@@ -4,6 +4,12 @@
 #include <stdbool.h>
 
 typedef struct {
+    int udp_fd;
+    struct addrinfo *udp_addr;
+    struct addrinfo *tcp_addr;
+} sockets_t;
+
+typedef struct {
     bool timeout;
     ssize_t bytes;
 } response_t;
