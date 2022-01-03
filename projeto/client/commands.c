@@ -10,10 +10,10 @@
 #include "../common/common.h"
 #include "commands.h"
 
-char uid[6] = {0};
-char pass[9] = {0};
+char uid[6];
+char pass[9];
 bool logged_in = false;
-char active_group[3] = {0};
+char active_group[3];
 bool group_selected = false;
 
 void get_udp_reply(char *udp_reply, int size, int server_fd, struct addrinfo *server_addr,
@@ -47,16 +47,14 @@ command_type_t register_user(sockets_t sockets, char *args) {
     char reply[8];
     get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
 
-    char prefix[4], status[4];
-    sscanf(reply, "%3s%3s", prefix, status);
-    if (strcmp(prefix, "RRG") == 0) {
-        if (strcmp(status, "OK") == 0)
-            printf("User successfully registered\n");
-        else if (strcmp(status, "DUP") == 0)
-            printf("User already registered\n");
-        else if (strcmp(status, "NOK") == 0)
-            printf("User registration failed\n");
-    }
+    if (strcmp(reply, "RRG OK\n") == 0)
+        printf("User successfully registered\n");
+    else if (strcmp(reply, "RRG DUP\n") == 0)
+        printf("User already registered\n");
+    else if (strcmp(reply, "RRG NOK\n") == 0)
+        printf("User registration failed\n");
+    else
+        return EXIT;
 
     return UDP;
 }
@@ -71,14 +69,12 @@ command_type_t unregister_user(sockets_t sockets, char *args) {
     char reply[8];
     get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
 
-    char prefix[4], status[4];
-    sscanf(reply, "%3s%3s", prefix, status);
-    if (strcmp(prefix, "RUN") == 0) {
-        if (strcmp(status, "OK") == 0)
-            printf("User successfully unregistered\n");
-        else if (strcmp(status, "NOK") == 0)
-            printf("User unregistration failed\n");
-    }
+    if (strcmp(reply, "RUN OK\n") == 0)
+        printf("User successfully unregistered\n");
+    else if (strcmp(reply, "RUN NOK\n") == 0)
+        printf("User unregistration failed\n");
+    else
+        return EXIT;
 
     return UDP;
 }
@@ -93,19 +89,17 @@ command_type_t login(sockets_t sockets, char *args) {
     strncpy(uid, id, 5);
     strncpy(pass, password, 8);
 
-    char reply[8];
+    char reply[8] = {0};
     get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
 
-    char prefix[4], status[4];
-    sscanf(reply, "%3s%3s", prefix, status);
-    if (strcmp(prefix, "RLO") == 0) {
-        if (strcmp(status, "OK") == 0) {
-            printf("You are now logged in\n");
-            logged_in = true;
-        } else if (strcmp(status, "NOK") == 0) {
-            printf("Login failed\n");
-            logged_in = false;
-        }
+    if (strcmp(reply, "RLO OK\n") == 0) {
+        printf("You are now logged in\n");
+        logged_in = true;
+    } else if (strcmp(reply, "RLO NOK\n") == 0) {
+        printf("Login failed\n");
+        logged_in = false;
+    } else {
+        return EXIT;
     }
 
     return UDP;
@@ -118,19 +112,15 @@ command_type_t logout(sockets_t sockets) {
     memset(uid, 0, sizeof uid);
     memset(pass, 0, sizeof pass);
 
-    char reply[8];
+    char reply[8] = {0};
     get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
 
-    char prefix[4], status[4];
-    sscanf(reply, "%3s%3s", prefix, status);
-    if (strcmp(prefix, "ROU") == 0) {
-        if (strcmp(status, "OK") == 0) {
-            printf("You are now logged out\n");
-            logged_in = false;
-            group_selected = false;
-        } else if (strcmp(status, "NOK") == 0) {
-            printf("Logout failed\n");
-        }
+    if (strcmp(reply, "ROU OK\n") == 0) {
+        printf("You are now logged out\n");
+        logged_in = false;
+        group_selected = false;
+    } else if (strcmp(reply, "ROU NOK\n") == 0) {
+        printf("Logout failed\n");
     }
 
     return UDP;
@@ -191,7 +181,7 @@ command_type_t subscribe_group(sockets_t sockets, char *args) {
         else if (strcmp(status, "NEW") == 0) {
             int new_gid;
             sscanf(reply + 8, "%d", &new_gid);
-            printf("New group created with ID %02d\n", new_gid);
+            printf("New group created and subscribed: %02d – \"%s\"\n", new_gid, name);
         } else if (strcmp(status, "E_USR") == 0)
             printf("Invalid user id\n");
         else if (strcmp(status, "E_GRP") == 0)
@@ -222,14 +212,10 @@ command_type_t unsubscribe_group(sockets_t sockets, char *args) {
     char reply[10];
     get_udp_reply(reply, 10, sockets.udp_fd, sockets.udp_addr, message);
 
-    char prefix[4], status[6];
-    sscanf(reply, "%3s%5s", prefix, status);
-    if (strcmp(prefix, "RGU") == 0) {
-        if (strcmp(status, "OK") == 0)
-            printf("Group successfully unsubscribed\n");
-        else if (strcmp(status, "NOK") == 0)
-            printf("Unsubscription failed\n");
-    }
+    if (strcmp(reply, "RGU OK\n") == 0)
+        printf("Group successfully unsubscribed\n");
+    else if (strcmp(reply, "RGU NOK\n") == 0)
+        printf("Unsubscription failed\n");
 
     return UDP;
 }
@@ -272,7 +258,7 @@ command_type_t select_group(char *args) {
         sscanf(args, "%2d", &gid);
         sprintf(active_group, "%02d", gid);
         group_selected = true;
-        printf("Group %s selected\n", active_group);
+        printf("Group %s – \"%s\" is now the active group\n", active_group);
     }
     return LOCAL;
 }
@@ -433,10 +419,14 @@ command_type_t post(sockets_t sockets, char *args) {
         char prefix[4], status[5];
         sscanf(message, "%3s%4s", prefix, status);
 
-        if (strcmp(status, "NOK") == 0) {
-            printf("Post failed\n");
-        } else if (is_mid(status)) {
-            printf("Success\n");
+        if (strcmp(prefix, "RPT") == 0) {
+            if (strcmp(status, "NOK") == 0) {
+                printf("Failed t post message\n");
+            } else if (is_mid(status)) {
+                printf("Posted message number %s to group %s - \"(group_name)\"\n", status, active_group);
+            }
+        } else {
+            return EXIT;
         }
 
         close(fd);
@@ -448,24 +438,24 @@ command_type_t post(sockets_t sockets, char *args) {
 void retrieve_messages(int fd, char *buffer, int size, int bytes_read, int offset,
                        int message_count) {
     char mid[5], user_id[6], text[241], slash[2], file_name[25], max_entry[300];
-    int args_count, offset_inc, text_size, i = 0;
+    int args_count, offset_inc, text_size, messages_read = 0;
     size_t file_size;
     bool incomplete_entry = false, text_read = false, has_file = false;
     printf("%d message(s) retrieved:\n", message_count);
-    // bzero(buffer, 1024);
 
-    while (i < message_count) {
+    while (messages_read < message_count) {
         if (offset == bytes_read || offset == bytes_read - 1) {
             bytes_read = receive_tcp(fd, buffer, size);
             offset = 0;
         }
-        if (buffer[offset] == '\n' && i == message_count)
+        if (buffer[offset] == '\n' && messages_read == message_count)
             break;
 
         if (!incomplete_entry && !text_read) {
             args_count = sscanf(buffer + offset, "%4s%n%5s%n%3d%n", mid, &offset_inc, user_id,
                                 &offset_inc, &text_size, &offset_inc);
-            if (args_count < 3 || offset + offset_inc == bytes_read || offset + offset_inc == bytes_read-1) {
+            if (args_count < 3 || offset + offset_inc == bytes_read ||
+                offset + offset_inc == bytes_read - 1) {
                 strncpy(max_entry, buffer + offset, offset_inc);
                 max_entry[offset_inc] = '\0';
                 incomplete_entry = true;
@@ -495,7 +485,8 @@ void retrieve_messages(int fd, char *buffer, int size, int bytes_read, int offse
             args_count = sscanf(buffer + offset, "%1s%n%24s%n%10lu%n", slash, &offset_inc,
                                 file_name, &offset_inc, &file_size, &offset_inc);
             if (args_count >= 1 && strcmp(slash, "/") == 0) {
-                if (args_count < 3 || offset + offset_inc == bytes_read || offset + offset_inc == bytes_read-1) {
+                if (args_count < 3 || offset + offset_inc == bytes_read ||
+                    offset + offset_inc == bytes_read - 1) {
                     strncpy(max_entry, buffer + offset, offset_inc);
                     max_entry[offset_inc] = '\0';
                     incomplete_entry = true;
@@ -512,7 +503,7 @@ void retrieve_messages(int fd, char *buffer, int size, int bytes_read, int offse
             if (!text_read) {
                 args_count = sscanf(max_entry, "%4s%n%5s%n%3d%n", mid, &total_offset, user_id,
                                     &total_offset, &text_size, &total_offset);
-                
+
                 text[text_size] = '\0';
                 char *read_ptr = text;
                 while (text_size > 0) {
@@ -559,13 +550,12 @@ void retrieve_messages(int fd, char *buffer, int size, int bytes_read, int offse
                         offset = 0;
                     }
                 }
-
                 printf(" file stored: %s", file_name);
                 fclose(file);
             }
             printf("\n");
+            messages_read++;
         }
-        i++;
     }
 }
 
@@ -602,10 +592,14 @@ command_type_t retrieve(sockets_t sockets, char *args) {
     char prefix[4], status[4];
     sscanf(buffer, "%3s%3s%2d%n", prefix, status, &message_count, &offset);
 
-    if (strcmp(status, "OK") == 0) {
-        retrieve_messages(fd, buffer, 1024, bytes_read, offset, message_count);
-    } else if (strcmp(status, "NOK") == 0) {
-        printf("Failed to retrieve messages\n");
+    if (strcmp(prefix, "RRT") == 0) {
+        if (strcmp(status, "OK") == 0) {
+            retrieve_messages(fd, buffer, 1024, bytes_read, offset, message_count);
+        } else if (strcmp(status, "NOK") == 0) {
+            printf("Failed to retrieve messages\n");
+        }
+    } else {
+        return EXIT;
     }
 
     close(fd);

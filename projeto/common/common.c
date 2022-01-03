@@ -41,6 +41,9 @@ bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, sockl
     if (n == -1)
         exit(EXIT_FAILURE);
 
+    if (n < size)
+        buffer[n] = '\0';
+
     return false;
 }
 
