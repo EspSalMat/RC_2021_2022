@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
 
 #include "../common/common.h"
 #include "commands.h"
@@ -58,7 +61,7 @@ command_type_t process_command(sockets_t sockets) {
         command_type = list_groups(sockets);
     else if (strcmp(command, "subscribe") == 0 || strcmp(command, "s") == 0)
         command_type = subscribe_group(sockets, raw_input + command_length + 1);
-    else if (strcmp(command, "unsubscribe") == 0)
+    else if (strcmp(command, "unsubscribe") == 0 || strcmp(command, "u") == 0)
         command_type = unsubscribe_group(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "my_groups") == 0 || strcmp(command, "mgl") == 0)
         command_type = list_user_groups(sockets);
@@ -70,7 +73,8 @@ command_type_t process_command(sockets_t sockets) {
         command_type = list_group_users(sockets);
     else if (strcmp(command, "post") == 0)
         command_type = post(sockets, raw_input + command_length + 1);
-
+    else if (strcmp(command, "retrieve") == 0)
+        command_type = retrieve(sockets, raw_input + command_length + 1);
     return command_type;
 }
 

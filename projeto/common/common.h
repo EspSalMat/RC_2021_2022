@@ -1,7 +1,18 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <netinet/in.h>
 #include <stdbool.h>
+
+typedef struct {
+    char *data;
+    size_t size;
+} buffer_t;
+
+#define create_buffer(buffer, N)                                                                   \
+    char buffer##_data[N];                                                                         \
+    buffer.size = size;                                                                            \
+    buffer.data = buffer##_data;
 
 typedef struct {
     int udp_fd;
@@ -9,15 +20,10 @@ typedef struct {
     struct addrinfo *tcp_addr;
 } sockets_t;
 
-typedef struct {
-    bool timeout;
-    ssize_t bytes;
-} response_t;
-
-ssize_t udp_send(int fd, const char *buffer, const struct sockaddr *addr, const socklen_t addrlen);
-ssize_t udp_client_send(int fd, const char *buffer, const struct addrinfo *addr);
-response_t udp_receive(int fd, char *buffer, int size, struct sockaddr_in *addr, socklen_t *addrlen);
-response_t udp_client_receive(int fd, char *buffer, int size);
 struct addrinfo *get_server_address(const char *ip, const char *port, int socktype);
+ssize_t send_udp(int fd, const char *buffer, const struct sockaddr *addr, const socklen_t addrlen);
+bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, socklen_t *addrlen);
+void send_tcp(int fd, char *message, size_t size);
+ssize_t receive_tcp(int server_fd, char *buffer, size_t size);
 
 #endif /* COMMON_H */

@@ -1,10 +1,13 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <sys/socket.h>
 #include <netdb.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
+#include "../common/common.h"
 #include "commands.h"
 
 char uid[6] = {0};
@@ -15,14 +18,15 @@ bool group_selected = false;
 
 void get_udp_reply(char *udp_reply, int size, int server_fd, struct addrinfo *server_addr,
                    char *message) {
-    ssize_t n;
-    response_t res;
+    bool res;
     unsigned int attempts = 0;
 
     do {
-        n = udp_client_send(server_fd, message, server_addr);
-        res = udp_client_receive(server_fd, udp_reply, size);
-    } while (res.timeout && (++attempts) < 3);
+        struct sockaddr_in addr;
+        socklen_t addrlen;
+        send_udp(server_fd, message, server_addr->ai_addr, server_addr->ai_addrlen);
+        res = receive_udp(server_fd, udp_reply, size, &addr, &addrlen);
+    } while (res && (++attempts) < 3);
 }
 
 command_type_t show_uid() {
@@ -286,33 +290,6 @@ command_type_t show_gid() {
     return LOCAL;
 }
 
-
-void send_tcp(int fd, char *message, size_t size) {
-    char *write_ptr = message;
-    while (size > 0) {
-        ssize_t bytes_written = write(fd, write_ptr, size);
-        if (bytes_written <= 0)
-            exit(1);
-        size -= bytes_written;
-        write_ptr += bytes_written;
-    }
-}
-
-int read_tcp(int server_fd, char *buffer, size_t size) {
-    ssize_t bytes_to_read = size;
-    char *read_ptr = buffer;
-    while (bytes_to_read > 0) {
-        ssize_t bytes_read = read(server_fd, read_ptr, bytes_to_read);
-        if (bytes_read == -1)
-            exit(1);
-        bytes_to_read -= bytes_read;
-        read_ptr += bytes_read;
-        if (*(read_ptr - 1) == '\n')
-            return size - bytes_to_read;
-    }
-    return size;
-}
-
 void show_group_subscribers(int fd, char *buffer, int size, int bytes_read, int offset) {
     int offset_inc;
     char group_name[25], user_id[6];
@@ -323,9 +300,10 @@ void show_group_subscribers(int fd, char *buffer, int size, int bytes_read, int 
     } else {
         printf("%s\n", group_name);
         bool incomplete_uid = false;
+        printf("%s/0\n", buffer);
         while (buffer[offset] != '\n') {
-            if (offset == bytes_read || offset == bytes_read - 1 || incomplete_uid) {
-                bytes_read = read_tcp(fd, buffer, size);
+            if (offset == bytes_read || offset == bytes_read - 1) {
+                bytes_read = receive_tcp(fd, buffer, size);
                 offset = 0;
             }
             if (buffer[offset] == '\n')
@@ -333,12 +311,12 @@ void show_group_subscribers(int fd, char *buffer, int size, int bytes_read, int 
 
             if (!incomplete_uid) {
                 sscanf(buffer + offset, " %5s%n", user_id, &offset_inc);
-                if (offset + 5 > bytes_read - 1)
+                if (offset + offset_inc == bytes_read && offset_inc < 6)
                     incomplete_uid = true;
             } else {
                 char uid_fragment[5];
                 sscanf(buffer, "%4s%n", uid_fragment, &offset_inc);
-                strcpy(user_id + 5 - offset_inc, uid_fragment);
+                strcat(user_id, uid_fragment);
                 incomplete_uid = false;
             }
             offset += offset_inc;
@@ -370,16 +348,16 @@ command_type_t list_group_users(sockets_t sockets) {
     sprintf(message, "ULS %s\n", active_group);
     send_tcp(fd, message, 7);
 
-    char buffer[1025]; // must contain group name
-    buffer[1024] = '\0';
-    int bytes_read = read_tcp(fd, buffer, 1024);
+    char buffer[46]; // must contain group name
+    buffer[45] = '\0';
+    int bytes_read = receive_tcp(fd, buffer, 45);
 
     int offset;
     char prefix[4], status[4];
     sscanf(buffer, "%3s%3s%n", prefix, status, &offset);
 
     if (strcmp(status, "OK") == 0) {
-        show_group_subscribers(fd, buffer, 1024, bytes_read, offset);
+        show_group_subscribers(fd, buffer, 45, bytes_read, offset);
     } else if (strcmp(status, "NOK") == 0) {
         printf("Failed to list subscribed users\n");
     }
@@ -395,13 +373,17 @@ void send_file_tcp(int fd, char *filename, size_t size) {
     if (file == NULL)
         exit(EXIT_FAILURE);
     while (size > 0) {
-        ssize_t bytes_read = fread(buffer, 1, 1024, file);
+        size_t bytes = 1024;
+        if (size < 1024)
+            bytes = size;
+        ssize_t bytes_read = fread(buffer, 1, bytes, file);
         send_tcp(fd, buffer, bytes_read);
         size -= bytes_read;
     }
     fclose(file);
 }
 
+bool is_mid(char *status) { return strlen(status) == 4; }
 command_type_t post(sockets_t sockets, char *args) {
     if (!logged_in) {
         printf("You are not logged in\n");
@@ -414,10 +396,10 @@ command_type_t post(sockets_t sockets, char *args) {
     char text[241], name[25];
     text[240] = '\0';
     int text_size;
-    int ret = sscanf(args, "\"%[^\"]\"%n %s", text, &text_size, name);
-    if (ret == -1)
+    int args_count = sscanf(args, "\"%[^\"]\"%n %s", text, &text_size, name);
+    if (args_count == -1)
         exit(EXIT_FAILURE);
-    else if (ret >= 1) {
+    else if (args_count >= 1) {
         text_size -= 2;
 
         int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -433,12 +415,12 @@ command_type_t post(sockets_t sockets, char *args) {
         int message_size = strlen(message);
         send_tcp(fd, message, message_size);
 
-        if (ret == 2) {
+        if (args_count == 2) {
             struct stat st;
             if (stat(name, &st) != 0)
                 exit(EXIT_FAILURE);
             size_t file_size = st.st_size;
-            //TODO: check file size
+            // TODO: check file size
             sprintf(message, " %s %ld ", name, file_size);
             message_size = strlen(message);
             send_tcp(fd, message, message_size);
@@ -446,8 +428,187 @@ command_type_t post(sockets_t sockets, char *args) {
         }
         send_tcp(fd, "\n", 1);
 
+        receive_tcp(fd, message, 9);
+
+        char prefix[4], status[5];
+        sscanf(message, "%3s%4s", prefix, status);
+
+        if (strcmp(status, "NOK") == 0) {
+            printf("Post failed\n");
+        } else if (is_mid(status)) {
+            printf("Success\n");
+        }
+
         close(fd);
     }
+
+    return TCP;
+}
+
+void retrieve_messages(int fd, char *buffer, int size, int bytes_read, int offset,
+                       int message_count) {
+    char mid[5], user_id[6], text[241], slash[2], file_name[25], max_entry[300];
+    int args_count, offset_inc, text_size, i = 0;
+    size_t file_size;
+    bool incomplete_entry = false, text_read = false, has_file = false;
+    printf("%d message(s) retrieved:\n", message_count);
+    // bzero(buffer, 1024);
+
+    while (i < message_count) {
+        if (offset == bytes_read || offset == bytes_read - 1) {
+            bytes_read = receive_tcp(fd, buffer, size);
+            offset = 0;
+        }
+        if (buffer[offset] == '\n' && i == message_count)
+            break;
+
+        if (!incomplete_entry && !text_read) {
+            args_count = sscanf(buffer + offset, "%4s%n%5s%n%3d%n", mid, &offset_inc, user_id,
+                                &offset_inc, &text_size, &offset_inc);
+            if (args_count < 3 || offset + offset_inc == bytes_read || offset + offset_inc == bytes_read-1) {
+                strncpy(max_entry, buffer + offset, offset_inc);
+                max_entry[offset_inc] = '\0';
+                incomplete_entry = true;
+                offset += offset_inc;
+            } else {
+                offset += offset_inc + 1;
+                text[text_size] = '\0';
+                char *read_ptr = text;
+                while (text_size > 0) {
+                    size_t bytes = 1024 - offset;
+                    if (text_size < bytes)
+                        bytes = text_size;
+
+                    strncpy(read_ptr, buffer + offset, bytes);
+                    read_ptr += bytes;
+                    text_size -= bytes;
+                    offset += bytes;
+                    if (offset == 1024) {
+                        bytes_read = receive_tcp(fd, buffer, 1024);
+                        offset = 0;
+                    }
+                }
+                text_read = true;
+            }
+        }
+        if (!incomplete_entry && text_read) {
+            args_count = sscanf(buffer + offset, "%1s%n%24s%n%10lu%n", slash, &offset_inc,
+                                file_name, &offset_inc, &file_size, &offset_inc);
+            if (args_count >= 1 && strcmp(slash, "/") == 0) {
+                if (args_count < 3 || offset + offset_inc == bytes_read || offset + offset_inc == bytes_read-1) {
+                    strncpy(max_entry, buffer + offset, offset_inc);
+                    max_entry[offset_inc] = '\0';
+                    incomplete_entry = true;
+                } else {
+                    has_file = true;
+                }
+                offset += offset_inc;
+            }
+        }
+        if (incomplete_entry) {
+            int total_offset;
+            strncpy(max_entry + offset_inc, buffer, 300 - offset_inc);
+            max_entry[299] = '\0';
+            if (!text_read) {
+                args_count = sscanf(max_entry, "%4s%n%5s%n%3d%n", mid, &total_offset, user_id,
+                                    &total_offset, &text_size, &total_offset);
+                
+                text[text_size] = '\0';
+                char *read_ptr = text;
+                while (text_size > 0) {
+                    size_t bytes = 1024 - offset;
+                    if (text_size < bytes)
+                        bytes = text_size;
+
+                    strncpy(read_ptr, buffer + offset, bytes);
+                    read_ptr += bytes;
+                    text_size -= bytes;
+                    offset += bytes;
+                    if (offset == 1024) {
+                        bytes_read = receive_tcp(fd, buffer, 1024);
+                        offset = 0;
+                    }
+                }
+                text_read = true;
+                text_read = true;
+            } else {
+                args_count = sscanf(buffer + offset, "%1s%n%24s%n%10lu%n", slash, &total_offset,
+                                    file_name, &total_offset, &file_size, &total_offset);
+            }
+            offset += total_offset - offset_inc;
+        }
+
+        if (!incomplete_entry && text_read) {
+            printf("%s - \"%s\";", mid, text);
+            text_read = false;
+            if (has_file) {
+                has_file = false;
+                FILE *file = fopen(file_name, "wb");
+                // Write file;
+                offset += 1;
+                while (file_size > 0) {
+                    size_t bytes = 1024 - offset;
+                    if (file_size < bytes)
+                        bytes = file_size;
+
+                    ssize_t bytes_written = fwrite(buffer + offset, 1, bytes, file);
+                    file_size -= bytes_written;
+                    offset += bytes_written;
+                    if (offset == 1024) {
+                        bytes_read = receive_tcp(fd, buffer, 1024);
+                        offset = 0;
+                    }
+                }
+
+                printf(" file stored: %s", file_name);
+                fclose(file);
+            }
+            printf("\n");
+        }
+        i++;
+    }
+}
+
+command_type_t retrieve(sockets_t sockets, char *args) {
+    if (!logged_in) {
+        printf("You are not logged in\n");
+        return LOCAL;
+    } else if (!group_selected) {
+        printf("You don't have a group selected\n");
+        return LOCAL;
+    }
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == -1)
+        exit(EXIT_FAILURE);
+
+    int n = connect(fd, sockets.tcp_addr->ai_addr, sockets.tcp_addr->ai_addrlen);
+    if (n == -1)
+        exit(EXIT_FAILURE);
+
+    char buffer[1025];
+    buffer[1024] = '\0';
+
+    int mid;
+    if (sscanf(args, "%4d", &mid) != -1) {
+        sprintf(buffer, "RTV %s %s %04d\n", uid, active_group, mid);
+    }
+
+    send_tcp(fd, buffer, 18);
+
+    int bytes_read = receive_tcp(fd, buffer, 1024);
+
+    int offset, message_count;
+    char prefix[4], status[4];
+    sscanf(buffer, "%3s%3s%2d%n", prefix, status, &message_count, &offset);
+
+    if (strcmp(status, "OK") == 0) {
+        retrieve_messages(fd, buffer, 1024, bytes_read, offset, message_count);
+    } else if (strcmp(status, "NOK") == 0) {
+        printf("Failed to retrieve messages\n");
+    }
+
+    close(fd);
 
     return TCP;
 }

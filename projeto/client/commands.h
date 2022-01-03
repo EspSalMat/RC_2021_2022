@@ -18,5 +18,6 @@ command_type_t select_group(char *args);
 command_type_t show_gid();
 command_type_t list_group_users(sockets_t sockets);
 command_type_t post(sockets_t sockets, char *args);
+command_type_t retrieve(sockets_t sockets, char *args);
 
 #endif /* COMMANDS_H */
