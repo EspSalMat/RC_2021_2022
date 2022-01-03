@@ -74,7 +74,8 @@ ssize_t receive_tcp(int server_fd, buffer_t buffer) {
     }
 
     // Make sure it's null terminated
-    buffer.data[buffer.size - 1 - bytes_to_read] = '\0';
+    ssize_t bytes_read = buffer.size - 1 - bytes_to_read;
+    buffer.data[bytes_read] = '\0';
 
-    return buffer.size - bytes_to_read;
+    return bytes_read;
 }

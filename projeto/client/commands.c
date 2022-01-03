@@ -278,36 +278,42 @@ command_type_t show_gid() {
 
 void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset) {
     int offset_inc;
-    char group_name[25], user_id[6];
+    char group_name[25];
+    char user_id[6];
+
     sscanf(buffer.data + offset, "%24s%n", group_name, &offset_inc);
     offset += offset_inc;
+
     if (buffer.data[offset] == '\n') {
         printf("%s has no subscribers\n", group_name);
-    } else {
-        printf("%s\n", group_name);
-        bool incomplete_uid = false;
-        while (buffer.data[offset] != '\n') {
-            if (offset == bytes_read || offset == bytes_read - 1) {
-                bytes_read = receive_tcp(fd, buffer);
-                offset = 0;
-            }
-            if (buffer.data[offset] == '\n')
-                break;
+        return;
+    }
 
-            if (!incomplete_uid) {
-                sscanf(buffer.data + offset, " %5s%n", user_id, &offset_inc);
-                if (offset + offset_inc == bytes_read && offset_inc < 6)
-                    incomplete_uid = true;
-            } else {
-                char uid_fragment[5];
-                sscanf(buffer.data, "%4s%n", uid_fragment, &offset_inc);
-                strcat(user_id, uid_fragment);
-                incomplete_uid = false;
-            }
+    printf("%s\n", group_name);
+
+    while (buffer.data[offset] != '\n') {
+        // Check if all of the buffer has been read
+        if (offset == bytes_read || offset == bytes_read - 1) {
+            bytes_read = receive_tcp(fd, buffer);
+            offset = 0;
+        }
+
+        sscanf(buffer.data + offset, " %5s%n", user_id, &offset_inc);
+
+        // Check if the buffer ended with an incomplete user id
+        if (offset + offset_inc == bytes_read) {
+            memcpy(buffer.data, buffer.data + offset, offset_inc);
+
+            // Buffer object that points to the main buffer
+            buffer_t tmp;
+            tmp.data = buffer.data + offset_inc;
+            tmp.size = buffer.size - offset_inc;
+
+            bytes_read = receive_tcp(fd, tmp);
+            offset = 0;
+        } else {
             offset += offset_inc;
-
-            if (!incomplete_uid)
-                printf("%s\n", user_id);
+            printf("%s\n", user_id);
         }
     }
 }
@@ -331,7 +337,7 @@ command_type_t list_group_users(sockets_t sockets) {
 
     buffer_t buffer;
     create_buffer(buffer, 1025);
-    
+
     char message[7];
     sprintf(message, "ULS %s\n", active_group);
     send_tcp(fd, message, 7);
@@ -425,7 +431,8 @@ command_type_t post(sockets_t sockets, char *args) {
             if (strcmp(status, "NOK") == 0) {
                 printf("Failed t post message\n");
             } else if (is_mid(status)) {
-                printf("Posted message number %s to group %s - \"(group_name)\"\n", status, active_group);
+                printf("Posted message number %s to group %s - \"(group_name)\"\n", status,
+                       active_group);
             }
         } else {
             return EXIT;
@@ -437,8 +444,7 @@ command_type_t post(sockets_t sockets, char *args) {
     return TCP;
 }
 
-void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset,
-                       int message_count) {
+void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int message_count) {
     char mid[5], user_id[6], text[241], slash[2], file_name[25], max_entry[300];
     int args_count, offset_inc, text_size, messages_read = 0;
     size_t file_size;
@@ -525,8 +531,9 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset,
                 text_read = true;
                 text_read = true;
             } else {
-                args_count = sscanf(buffer.data + offset, "%1s%n%24s%n%10lu%n", slash, &total_offset,
-                                    file_name, &total_offset, &file_size, &total_offset);
+                args_count =
+                    sscanf(buffer.data + offset, "%1s%n%24s%n%10lu%n", slash, &total_offset,
+                           file_name, &total_offset, &file_size, &total_offset);
             }
             offset += total_offset - offset_inc;
         }
