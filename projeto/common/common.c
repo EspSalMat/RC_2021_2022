@@ -58,9 +58,9 @@ void send_tcp(int fd, char *message, size_t size) {
     }
 }
 
-ssize_t receive_tcp(int server_fd, char *buffer, size_t size) {
-    ssize_t bytes_to_read = size;
-    char *read_ptr = buffer;
+ssize_t receive_tcp(int server_fd, buffer_t buffer) {
+    ssize_t bytes_to_read = buffer.size - 1;
+    char *read_ptr = buffer.data;
 
     while (bytes_to_read > 0) {
         ssize_t bytes_read = read(server_fd, read_ptr, bytes_to_read);
@@ -71,9 +71,10 @@ ssize_t receive_tcp(int server_fd, char *buffer, size_t size) {
 
         bytes_to_read -= bytes_read;
         read_ptr += bytes_read;
-        // if (*(read_ptr - 1) == '\n')
-        //     return size - bytes_to_read;
     }
 
-    return size - bytes_to_read;
+    // Make sure it's null terminated
+    buffer.data[buffer.size - 1 - bytes_to_read] = '\0';
+
+    return buffer.size - bytes_to_read;
 }

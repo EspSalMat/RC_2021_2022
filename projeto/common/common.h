@@ -11,8 +11,8 @@ typedef struct {
 
 #define create_buffer(buffer, N)                                                                   \
     char buffer##_data[N];                                                                         \
-    buffer.size = size;                                                                            \
-    buffer.data = buffer##_data;
+    buffer.size = N;                                                                            \
+    buffer.data = buffer##_data
 
 typedef struct {
     int udp_fd;
@@ -24,6 +24,6 @@ struct addrinfo *get_server_address(const char *ip, const char *port, int sockty
 ssize_t send_udp(int fd, const char *buffer, const struct sockaddr *addr, const socklen_t addrlen);
 bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, socklen_t *addrlen);
 void send_tcp(int fd, char *message, size_t size);
-ssize_t receive_tcp(int server_fd, char *buffer, size_t size);
+ssize_t receive_tcp(int server_fd, buffer_t buffer);
 
 #endif /* COMMON_H */
