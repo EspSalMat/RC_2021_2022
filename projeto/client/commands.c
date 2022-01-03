@@ -167,7 +167,7 @@ command_type_t subscribe_group(sockets_t sockets, char *args) {
     int gid;
     sscanf(args, "%2d%24s", &gid, name);
 
-    char message[29];
+    char message[39];
     sprintf(message, "GSR %s %02d %s\n", uid, gid, name);
 
     char reply[11];
@@ -338,7 +338,7 @@ command_type_t list_group_users(sockets_t sockets) {
     buffer_t buffer;
     create_buffer(buffer, 1025);
 
-    char message[7];
+    char message[8];
     sprintf(message, "ULS %s\n", active_group);
     send_tcp(fd, message, 7);
 
@@ -348,34 +348,21 @@ command_type_t list_group_users(sockets_t sockets) {
     char prefix[4], status[4];
     sscanf(buffer.data, "%3s%3s%n", prefix, status, &offset);
 
-    if (strcmp(status, "OK") == 0) {
-        show_group_subscribers(fd, buffer, bytes_read, offset);
-    } else if (strcmp(status, "NOK") == 0) {
-        printf("Failed to list subscribed users\n");
+    if (strcmp(prefix, "RUL") == 0) {
+        if (strcmp(status, "OK") == 0) {
+            show_group_subscribers(fd, buffer, bytes_read, offset);
+        } else if (strcmp(status, "NOK") == 0) {
+            printf("Failed to list subscribed users\n");
+        }
     }
-
+    
     close(fd);
 
     return TCP;
 }
 
-void send_file_tcp(int fd, char *filename, size_t size) {
-    char buffer[1024];
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL)
-        exit(EXIT_FAILURE);
-    while (size > 0) {
-        size_t bytes = 1024;
-        if (size < 1024)
-            bytes = size;
-        ssize_t bytes_read = fread(buffer, 1, bytes, file);
-        send_tcp(fd, buffer, bytes_read);
-        size -= bytes_read;
-    }
-    fclose(file);
-}
-
 bool is_mid(char *status) { return strlen(status) == 4; }
+
 command_type_t post(sockets_t sockets, char *args) {
     if (!logged_in) {
         printf("You are not logged in\n");

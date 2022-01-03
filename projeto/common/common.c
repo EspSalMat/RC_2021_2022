@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <errno.h>
 #include <netdb.h>
 #include <stdlib.h>
@@ -56,6 +57,23 @@ void send_tcp(int fd, char *message, size_t size) {
         size -= bytes_written;
         write_ptr += bytes_written;
     }
+}
+
+
+void send_file_tcp(int fd, char *filename, size_t size) {
+    char buffer[1024];
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL)
+        exit(EXIT_FAILURE);
+    while (size > 0) {
+        size_t bytes = 1024;
+        if (size < 1024)
+            bytes = size;
+        ssize_t bytes_read = fread(buffer, 1, bytes, file);
+        send_tcp(fd, buffer, bytes_read);
+        size -= bytes_read;
+    }
+    fclose(file);
 }
 
 ssize_t receive_tcp(int server_fd, buffer_t buffer) {
