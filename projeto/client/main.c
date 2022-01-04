@@ -1,8 +1,8 @@
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <netdb.h>
 #include <unistd.h>
 
 #include "../common/common.h"
@@ -33,7 +33,12 @@ args_t parse_args(int argc, char **argv) {
     return args;
 }
 
-command_type_t process_command(sockets_t sockets) {
+bool unknown_command() {
+    printf("Unknown command\n");
+    return false;
+}
+
+bool process_command(sockets_t sockets) {
     char raw_input[MAX_LINE];
     char command[MAX_COMMAND];
     int command_length;
@@ -43,39 +48,38 @@ command_type_t process_command(sockets_t sockets) {
     }
     sscanf(raw_input, "%11s%n", command, &command_length);
 
-    command_type_t command_type = LOCAL;
-
     if (strcmp(command, "exit") == 0)
-        command_type = EXIT;
+        return true;
     else if (strcmp(command, "su") == 0 || strcmp(command, "showuid") == 0)
-        command_type = show_uid();
+        return show_uid();
     else if (strcmp(command, "reg") == 0)
-        command_type = register_user(sockets, raw_input + command_length + 1);
+        return register_user(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "unr") == 0 || strcmp(command, "unregister") == 0)
-        command_type = unregister_user(sockets, raw_input + command_length + 1);
+        return unregister_user(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "login") == 0)
-        command_type = login(sockets, raw_input + command_length + 1);
+        return login(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "logout") == 0)
-        command_type = logout(sockets);
+        return logout(sockets);
     else if (strcmp(command, "gl") == 0 || strcmp(command, "groups") == 0)
-        command_type = list_groups(sockets);
+        return list_groups(sockets);
     else if (strcmp(command, "subscribe") == 0 || strcmp(command, "s") == 0)
-        command_type = subscribe_group(sockets, raw_input + command_length + 1);
+        return subscribe_group(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "unsubscribe") == 0 || strcmp(command, "u") == 0)
-        command_type = unsubscribe_group(sockets, raw_input + command_length + 1);
+        return unsubscribe_group(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "my_groups") == 0 || strcmp(command, "mgl") == 0)
-        command_type = list_user_groups(sockets);
+        return list_user_groups(sockets);
     else if (strcmp(command, "select") == 0 || strcmp(command, "sag") == 0)
-        command_type = select_group(raw_input + command_length + 1);
+        return select_group(raw_input + command_length + 1);
     else if (strcmp(command, "showgid") == 0 || strcmp(command, "sg") == 0)
-        command_type = show_gid();
+        return show_gid();
     else if (strcmp(command, "ulist") == 0 || strcmp(command, "ul") == 0)
-        command_type = list_group_users(sockets);
+        return list_group_users(sockets);
     else if (strcmp(command, "post") == 0)
-        command_type = post(sockets, raw_input + command_length + 1);
+        return post(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "retrieve") == 0)
-        command_type = retrieve(sockets, raw_input + command_length + 1);
-    return command_type;
+        return retrieve(sockets, raw_input + command_length + 1);
+    else 
+        return unknown_command();
 }
 
 void set_timeout(int fd, int sec) {
@@ -97,11 +101,10 @@ int main(int argc, char **argv) {
     sockets.udp_addr = get_server_address(args.ip, args.port, SOCK_DGRAM);
     sockets.tcp_addr = get_server_address(args.ip, args.port, SOCK_STREAM);
 
-    while (true) {
+    bool should_exit = false;
+    while (!should_exit) {
         printf("> ");
-        command_type_t type = process_command(sockets);
-        if (type == EXIT)
-            break;
+        should_exit = process_command(sockets);
     }
 
     freeaddrinfo(sockets.udp_addr);

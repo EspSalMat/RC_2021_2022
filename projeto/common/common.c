@@ -1,6 +1,6 @@
-#include <stdio.h>
 #include <errno.h>
 #include <netdb.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -58,7 +58,6 @@ void send_tcp(int fd, char *message, size_t size) {
         write_ptr += bytes_written;
     }
 }
-
 
 void send_file_tcp(int fd, char *filename, size_t size) {
     char buffer[1024];

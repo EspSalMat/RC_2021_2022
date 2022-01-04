@@ -16,6 +16,17 @@ bool logged_in = false;
 char active_group[3];
 bool group_selected = false;
 
+ssize_t shift_buffer(int fd, buffer_t buffer, int offset, int offset_inc) {
+    memcpy(buffer.data, buffer.data + offset, offset_inc);
+
+    // Buffer object that points to the main buffer
+    buffer_t tmp;
+    tmp.data = buffer.data + offset_inc;
+    tmp.size = buffer.size - offset_inc;
+
+    return receive_tcp(fd, tmp);
+}
+
 void get_udp_reply(char *udp_reply, int size, int server_fd, struct addrinfo *server_addr,
                    char *message) {
     bool res;
@@ -29,15 +40,16 @@ void get_udp_reply(char *udp_reply, int size, int server_fd, struct addrinfo *se
     } while (res && (++attempts) < 3);
 }
 
-command_type_t show_uid() {
+bool show_uid() {
     if (logged_in)
         printf("%s\n", uid);
     else
         printf("You are not logged in\n");
-    return LOCAL;
+
+    return false;
 }
 
-command_type_t register_user(sockets_t sockets, char *args) {
+bool register_user(sockets_t sockets, char *args) {
     char id[6], password[9];
     sscanf(args, "%s%s", id, password);
 
@@ -54,12 +66,12 @@ command_type_t register_user(sockets_t sockets, char *args) {
     else if (strcmp(reply, "RRG NOK\n") == 0)
         printf("User registration failed\n");
     else
-        return EXIT;
+        return true;
 
-    return UDP;
+    return false;
 }
 
-command_type_t unregister_user(sockets_t sockets, char *args) {
+bool unregister_user(sockets_t sockets, char *args) {
     char id[6], password[9];
     sscanf(args, "%5s%8s", id, password);
 
@@ -74,12 +86,12 @@ command_type_t unregister_user(sockets_t sockets, char *args) {
     else if (strcmp(reply, "RUN NOK\n") == 0)
         printf("User unregistration failed\n");
     else
-        return EXIT;
+        return true;
 
-    return UDP;
+    return false;
 }
 
-command_type_t login(sockets_t sockets, char *args) {
+bool login(sockets_t sockets, char *args) {
     char id[6], password[9];
     sscanf(args, "%5s%8s", id, password);
 
@@ -99,13 +111,13 @@ command_type_t login(sockets_t sockets, char *args) {
         printf("Login failed\n");
         logged_in = false;
     } else {
-        return EXIT;
+        return true;
     }
 
-    return UDP;
+    return false;
 }
 
-command_type_t logout(sockets_t sockets) {
+bool logout(sockets_t sockets) {
     char message[20];
     sprintf(message, "OUT %s %s\n", uid, pass);
 
@@ -123,7 +135,7 @@ command_type_t logout(sockets_t sockets) {
         printf("Logout failed\n");
     }
 
-    return UDP;
+    return false;
 }
 
 void show_groups(char *reply, int offset, int n) {
@@ -137,7 +149,7 @@ void show_groups(char *reply, int offset, int n) {
     }
 }
 
-command_type_t list_groups(sockets_t sockets) {
+bool list_groups(sockets_t sockets) {
     char message[5];
     strcpy(message, "GLS\n");
 
@@ -154,13 +166,13 @@ command_type_t list_groups(sockets_t sockets) {
             show_groups(reply, offset, n);
     }
 
-    return UDP;
+    return false;
 }
 
-command_type_t subscribe_group(sockets_t sockets, char *args) {
+bool subscribe_group(sockets_t sockets, char *args) {
     if (!logged_in) {
         printf("You are not logged in\n");
-        return LOCAL;
+        return false;
     }
 
     char name[25];
@@ -194,13 +206,13 @@ command_type_t subscribe_group(sockets_t sockets, char *args) {
             printf("Subscription failed\n");
     }
 
-    return UDP;
+    return false;
 }
 
-command_type_t unsubscribe_group(sockets_t sockets, char *args) {
+bool unsubscribe_group(sockets_t sockets, char *args) {
     if (!logged_in) {
         printf("You are not logged in\n");
-        return LOCAL;
+        return false;
     }
 
     int gid;
@@ -217,13 +229,13 @@ command_type_t unsubscribe_group(sockets_t sockets, char *args) {
     else if (strcmp(reply, "RGU NOK\n") == 0)
         printf("Unsubscription failed\n");
 
-    return UDP;
+    return false;
 }
 
-command_type_t list_user_groups(sockets_t sockets) {
+bool list_user_groups(sockets_t sockets) {
     if (!logged_in) {
         printf("You are not logged in\n");
-        return LOCAL;
+        return false;
     }
 
     char message[11];
@@ -247,10 +259,10 @@ command_type_t list_user_groups(sockets_t sockets) {
         }
     }
 
-    return UDP;
+    return false;
 }
 
-command_type_t select_group(char *args) {
+bool select_group(char *args) {
     if (!logged_in)
         printf("You are not logged in\n");
     else {
@@ -260,10 +272,10 @@ command_type_t select_group(char *args) {
         group_selected = true;
         printf("Group %s – \"%s\" is now the active group\n", active_group);
     }
-    return LOCAL;
+    return false;
 }
 
-command_type_t show_gid() {
+bool show_gid() {
     if (!logged_in)
         printf("You are not logged in\n");
     else {
@@ -273,7 +285,7 @@ command_type_t show_gid() {
             printf("You don't have a group selected\n");
     }
 
-    return LOCAL;
+    return false;
 }
 
 void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset) {
@@ -302,14 +314,7 @@ void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset)
 
         // Check if the buffer ended with an incomplete user id
         if (offset + offset_inc == bytes_read) {
-            memcpy(buffer.data, buffer.data + offset, offset_inc);
-
-            // Buffer object that points to the main buffer
-            buffer_t tmp;
-            tmp.data = buffer.data + offset_inc;
-            tmp.size = buffer.size - offset_inc;
-
-            bytes_read = receive_tcp(fd, tmp);
+            bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
             offset = 0;
         } else {
             offset += offset_inc;
@@ -318,13 +323,13 @@ void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset)
     }
 }
 
-command_type_t list_group_users(sockets_t sockets) {
+bool list_group_users(sockets_t sockets) {
     if (!logged_in) {
         printf("You are not logged in\n");
-        return LOCAL;
+        return false;
     } else if (!group_selected) {
         printf("You don't have a group selected\n");
-        return LOCAL;
+        return false;
     }
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -358,18 +363,18 @@ command_type_t list_group_users(sockets_t sockets) {
 
     close(fd);
 
-    return TCP;
+    return false;
 }
 
 bool is_mid(char *status) { return strlen(status) == 4; }
 
-command_type_t post(sockets_t sockets, char *args) {
+bool post(sockets_t sockets, char *args) {
     if (!logged_in) {
         printf("You are not logged in\n");
-        return LOCAL;
+        return false;
     } else if (!group_selected) {
         printf("You don't have a group selected\n");
-        return LOCAL;
+        return false;
     }
 
     char text[241], name[25];
@@ -422,13 +427,13 @@ command_type_t post(sockets_t sockets, char *args) {
                        active_group);
             }
         } else {
-            return EXIT;
+            return true;
         }
 
         close(fd);
     }
 
-    return TCP;
+    return false;
 }
 
 void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int message_count) {
@@ -451,14 +456,7 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
         case MID:
             sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
-                memcpy(buffer.data, buffer.data + offset, offset_inc);
-
-                // Buffer object that points to the main buffer
-                buffer_t tmp;
-                tmp.data = buffer.data + offset_inc;
-                tmp.size = buffer.size - offset_inc;
-
-                bytes_read = receive_tcp(fd, tmp);
+                bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 offset = 0;
             } else {
                 current_state = UID;
@@ -469,14 +467,7 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
         case UID:
             sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
-                memcpy(buffer.data, buffer.data + offset, offset_inc);
-
-                // Buffer object that points to the main buffer
-                buffer_t tmp;
-                tmp.data = buffer.data + offset_inc;
-                tmp.size = buffer.size - offset_inc;
-
-                bytes_read = receive_tcp(fd, tmp);
+                bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 offset = 0;
             } else {
                 current_state = TSIZE;
@@ -487,14 +478,7 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
         case TSIZE:
             sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
-                memcpy(buffer.data, buffer.data + offset, offset_inc);
-
-                // Buffer object that points to the main buffer
-                buffer_t tmp;
-                tmp.data = buffer.data + offset_inc;
-                tmp.size = buffer.size - offset_inc;
-
-                bytes_read = receive_tcp(fd, tmp);
+                bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 offset = 0;
             } else {
                 current_state = TEXT;
@@ -524,10 +508,15 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
                 }
             }
 
+            cursor--;
+            if (*cursor == '\n')
+                *cursor = '\0';
+
             current_state = FILE_CHECK;
             break;
 
         case FILE_CHECK:
+            slash[0] = '\0';
             sscanf(buffer.data + offset, "%1s%n", slash, &offset_inc);
             printf("%s - \"%s\";", mid, text);
 
@@ -544,14 +533,7 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
         case FNAME:
             sscanf(buffer.data + offset, "%24s%n", file_name, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
-                memcpy(buffer.data, buffer.data + offset, offset_inc);
-
-                // Buffer object that points to the main buffer
-                buffer_t tmp;
-                tmp.data = buffer.data + offset_inc;
-                tmp.size = buffer.size - offset_inc;
-
-                bytes_read = receive_tcp(fd, tmp);
+                bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 offset = 0;
             } else {
                 current_state = FSIZE;
@@ -562,14 +544,7 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
         case FSIZE:
             sscanf(buffer.data + offset, "%lu%n", &file_size, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
-                memcpy(buffer.data, buffer.data + offset, offset_inc);
-
-                // Buffer object that points to the main buffer
-                buffer_t tmp;
-                tmp.data = buffer.data + offset_inc;
-                tmp.size = buffer.size - offset_inc;
-
-                bytes_read = receive_tcp(fd, tmp);
+                bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 offset = 0;
             } else {
                 current_state = FDATA;
@@ -608,13 +583,13 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
     }
 }
 
-command_type_t retrieve(sockets_t sockets, char *args) {
+bool retrieve(sockets_t sockets, char *args) {
     if (!logged_in) {
         printf("You are not logged in\n");
-        return LOCAL;
+        return false;
     } else if (!group_selected) {
         printf("You don't have a group selected\n");
-        return LOCAL;
+        return false;
     }
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -648,10 +623,10 @@ command_type_t retrieve(sockets_t sockets, char *args) {
             printf("Failed to retrieve messages\n");
         }
     } else {
-        return EXIT;
+        return true;
     }
 
     close(fd);
 
-    return TCP;
+    return false;
 }
