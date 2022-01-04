@@ -355,7 +355,7 @@ command_type_t list_group_users(sockets_t sockets) {
             printf("Failed to list subscribed users\n");
         }
     }
-    
+
     close(fd);
 
     return TCP;
@@ -416,7 +416,7 @@ command_type_t post(sockets_t sockets, char *args) {
 
         if (strcmp(prefix, "RPT") == 0) {
             if (strcmp(status, "NOK") == 0) {
-                printf("Failed t post message\n");
+                printf("Failed to post message\n");
             } else if (is_mid(status)) {
                 printf("Posted message number %s to group %s - \"(group_name)\"\n", status,
                        active_group);
@@ -432,125 +432,178 @@ command_type_t post(sockets_t sockets, char *args) {
 }
 
 void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int message_count) {
-    char mid[5], user_id[6], text[241], slash[2], file_name[25], max_entry[300];
-    int args_count, offset_inc, text_size, messages_read = 0;
+    char mid[5], user_id[6], text[241], slash[2], file_name[25];
+    int offset_inc, text_size, messages_read = 0;
     size_t file_size;
-    bool incomplete_entry = false, text_read = false, has_file = false;
+    FILE *file;
+
     printf("%d message(s) retrieved:\n", message_count);
 
+    enum { MID, UID, TSIZE, TEXT, FILE_CHECK, FNAME, FSIZE, FDATA } current_state;
+
     while (messages_read < message_count) {
-        if (offset == bytes_read || offset == bytes_read - 1) {
+        if (offset >= bytes_read - 1) {
             bytes_read = receive_tcp(fd, buffer);
             offset = 0;
         }
-        if (buffer.data[offset] == '\n' && messages_read == message_count)
+
+        switch (current_state) {
+        case MID:
+            sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc);
+            if (offset + offset_inc >= bytes_read) {
+                memcpy(buffer.data, buffer.data + offset, offset_inc);
+
+                // Buffer object that points to the main buffer
+                buffer_t tmp;
+                tmp.data = buffer.data + offset_inc;
+                tmp.size = buffer.size - offset_inc;
+
+                bytes_read = receive_tcp(fd, tmp);
+                offset = 0;
+            } else {
+                current_state = UID;
+                offset += offset_inc;
+            }
             break;
 
-        if (!incomplete_entry && !text_read) {
-            args_count = sscanf(buffer.data + offset, "%4s%n%5s%n%3d%n", mid, &offset_inc, user_id,
-                                &offset_inc, &text_size, &offset_inc);
-            if (args_count < 3 || offset + offset_inc == bytes_read ||
-                offset + offset_inc == bytes_read - 1) {
-                strncpy(max_entry, buffer.data + offset, offset_inc);
-                max_entry[offset_inc] = '\0';
-                incomplete_entry = true;
-                offset += offset_inc;
+        case UID:
+            sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc);
+            if (offset + offset_inc >= bytes_read) {
+                memcpy(buffer.data, buffer.data + offset, offset_inc);
+
+                // Buffer object that points to the main buffer
+                buffer_t tmp;
+                tmp.data = buffer.data + offset_inc;
+                tmp.size = buffer.size - offset_inc;
+
+                bytes_read = receive_tcp(fd, tmp);
+                offset = 0;
             } else {
+                current_state = TSIZE;
+                offset += offset_inc;
+            }
+            break;
+
+        case TSIZE:
+            sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc);
+            if (offset + offset_inc >= bytes_read) {
+                memcpy(buffer.data, buffer.data + offset, offset_inc);
+
+                // Buffer object that points to the main buffer
+                buffer_t tmp;
+                tmp.data = buffer.data + offset_inc;
+                tmp.size = buffer.size - offset_inc;
+
+                bytes_read = receive_tcp(fd, tmp);
+                offset = 0;
+            } else {
+                current_state = TEXT;
                 offset += offset_inc + 1;
-                text[text_size] = '\0';
-                char *read_ptr = text;
-                while (text_size > 0) {
-                    size_t bytes = 1024 - offset;
-                    if (text_size < bytes)
-                        bytes = text_size;
-
-                    strncpy(read_ptr, buffer.data + offset, bytes);
-                    read_ptr += bytes;
-                    text_size -= bytes;
-                    offset += bytes;
-                    if (offset == 1024) {
-                        bytes_read = receive_tcp(fd, buffer);
-                        offset = 0;
-                    }
-                }
-                text_read = true;
             }
-        }
-        if (!incomplete_entry && text_read) {
-            args_count = sscanf(buffer.data + offset, "%1s%n%24s%n%10lu%n", slash, &offset_inc,
-                                file_name, &offset_inc, &file_size, &offset_inc);
-            if (args_count >= 1 && strcmp(slash, "/") == 0) {
-                if (args_count < 3 || offset + offset_inc == bytes_read ||
-                    offset + offset_inc == bytes_read - 1) {
-                    strncpy(max_entry, buffer.data + offset, offset_inc);
-                    max_entry[offset_inc] = '\0';
-                    incomplete_entry = true;
-                } else {
-                    has_file = true;
+            break;
+
+        case TEXT:
+            text[text_size] = '\0';
+            char *cursor = text;
+
+            while (text_size > 0) {
+                size_t bytes = buffer.size - offset - 1;
+                if (text_size < bytes)
+                    bytes = text_size;
+
+                memcpy(cursor, buffer.data + offset, bytes);
+
+                // Move cursor and offset
+                cursor += bytes;
+                text_size -= bytes;
+                offset += bytes;
+
+                if (offset >= bytes_read) {
+                    bytes_read = receive_tcp(fd, buffer);
+                    offset = 0;
                 }
+            }
+
+            current_state = FILE_CHECK;
+            break;
+
+        case FILE_CHECK:
+            sscanf(buffer.data + offset, "%1s%n", slash, &offset_inc);
+            printf("%s - \"%s\";", mid, text);
+
+            if (slash[0] == '/') {
+                current_state = FNAME;
+                offset += offset_inc;
+            } else {
+                printf("\n");
+                current_state = MID;
+                messages_read++;
+            }
+            break;
+
+        case FNAME:
+            sscanf(buffer.data + offset, "%24s%n", file_name, &offset_inc);
+            if (offset + offset_inc >= bytes_read) {
+                memcpy(buffer.data, buffer.data + offset, offset_inc);
+
+                // Buffer object that points to the main buffer
+                buffer_t tmp;
+                tmp.data = buffer.data + offset_inc;
+                tmp.size = buffer.size - offset_inc;
+
+                bytes_read = receive_tcp(fd, tmp);
+                offset = 0;
+            } else {
+                current_state = FSIZE;
                 offset += offset_inc;
             }
-        }
-        if (incomplete_entry) {
-            int total_offset;
-            strncpy(max_entry + offset_inc, buffer.data, 300 - offset_inc);
-            max_entry[299] = '\0';
-            if (!text_read) {
-                args_count = sscanf(max_entry, "%4s%n%5s%n%3d%n", mid, &total_offset, user_id,
-                                    &total_offset, &text_size, &total_offset);
+            break;
 
-                text[text_size] = '\0';
-                char *read_ptr = text;
-                while (text_size > 0) {
-                    size_t bytes = 1024 - offset;
-                    if (text_size < bytes)
-                        bytes = text_size;
+        case FSIZE:
+            sscanf(buffer.data + offset, "%lu%n", &file_size, &offset_inc);
+            if (offset + offset_inc >= bytes_read) {
+                memcpy(buffer.data, buffer.data + offset, offset_inc);
 
-                    strncpy(read_ptr, buffer.data + offset, bytes);
-                    read_ptr += bytes;
-                    text_size -= bytes;
-                    offset += bytes;
-                    if (offset == 1024) {
-                        bytes_read = receive_tcp(fd, buffer);
-                        offset = 0;
-                    }
-                }
-                text_read = true;
-                text_read = true;
+                // Buffer object that points to the main buffer
+                buffer_t tmp;
+                tmp.data = buffer.data + offset_inc;
+                tmp.size = buffer.size - offset_inc;
+
+                bytes_read = receive_tcp(fd, tmp);
+                offset = 0;
             } else {
-                args_count =
-                    sscanf(buffer.data + offset, "%1s%n%24s%n%10lu%n", slash, &total_offset,
-                           file_name, &total_offset, &file_size, &total_offset);
+                current_state = FDATA;
+                offset += offset_inc + 1;
             }
-            offset += total_offset - offset_inc;
-        }
+            break;
 
-        if (!incomplete_entry && text_read) {
-            printf("%s - \"%s\";", mid, text);
-            text_read = false;
-            if (has_file) {
-                has_file = false;
-                FILE *file = fopen(file_name, "wb");
-                // Write file;
-                offset += 1;
-                while (file_size > 0) {
-                    size_t bytes = 1024 - offset;
-                    if (file_size < bytes)
-                        bytes = file_size;
+        case FDATA:
+            //printf("FDATA\n");
+            file = fopen(file_name, "wb");
 
-                    ssize_t bytes_written = fwrite(buffer.data + offset, 1, bytes, file);
-                    file_size -= bytes_written;
-                    offset += bytes_written;
-                    if (offset == 1024) {
-                        bytes_read = receive_tcp(fd, buffer);
-                        offset = 0;
-                    }
+            // Write file
+            while (file_size > 0) {
+                size_t bytes = buffer.size - offset - 1;
+                if (file_size < bytes)
+                    bytes = file_size;
+                ssize_t bytes_written = fwrite(buffer.data + offset, 1, bytes, file);
+                file_size -= bytes_written;
+                offset += bytes_written;
+
+                if (offset >= bytes_read) {
+                    bytes_read = receive_tcp(fd, buffer);
+                    offset = 0;
                 }
-                printf(" file stored: %s", file_name);
-                fclose(file);
             }
-            printf("\n");
+
+            printf(" file stored: %s\n", file_name);
+            fclose(file);
+            current_state = MID;
             messages_read++;
+            break;
+
+        default:
+            break;
         }
     }
 }
