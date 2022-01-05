@@ -48,8 +48,10 @@ bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, sockl
     return false;
 }
 
-void send_tcp(int fd, char *message, size_t size) {
-    char *write_ptr = message;
+void send_tcp(int fd, buffer_t buffer) {
+    char *write_ptr = buffer.data;
+    size_t size = buffer.size;
+
     while (size > 0) {
         ssize_t bytes_written = write(fd, write_ptr, size);
         if (bytes_written <= 0)
@@ -59,19 +61,26 @@ void send_tcp(int fd, char *message, size_t size) {
     }
 }
 
-void send_file_tcp(int fd, char *filename, size_t size) {
-    char buffer[1024];
+void send_file_tcp(int fd, char *filename, size_t file_size) {
+    buffer_t buffer;
+    create_buffer(buffer, 1024);
+    
     FILE *file = fopen(filename, "rb");
     if (file == NULL)
         exit(EXIT_FAILURE);
-    while (size > 0) {
-        size_t bytes = 1024;
-        if (size < 1024)
-            bytes = size;
-        ssize_t bytes_read = fread(buffer, 1, bytes, file);
-        send_tcp(fd, buffer, bytes_read);
-        size -= bytes_read;
+    
+    while (file_size > 0) {
+        size_t bytes = file_size < buffer.size ? file_size : buffer.size;
+        bytes = fread(buffer.data, 1, bytes, file);
+
+        buffer_t tmp;
+        tmp.data = buffer.data;
+        tmp.size = bytes;
+        send_tcp(fd, tmp);
+
+        file_size -= bytes;
     }
+
     fclose(file);
 }
 

@@ -354,9 +354,11 @@ bool list_group_users(sockets_t sockets) {
     buffer_t buffer;
     create_buffer(buffer, 1025);
 
-    char message[8];
-    sprintf(message, "ULS %s\n", active_group);
-    send_tcp(fd, message, 7);
+    buffer_t message;
+    create_buffer(message, 8);
+    message.size = 7;
+    sprintf(message.data, "ULS %s\n", active_group);
+    send_tcp(fd, message);
 
     int bytes_read = receive_tcp(fd, buffer);
     close(fd);
@@ -407,8 +409,11 @@ bool post(sockets_t sockets, char *args) {
         create_buffer(buffer, 158);
 
         sprintf(buffer.data, "PST %s %s %d %s", uid, active_group, text_size, text);
-        int message_size = strlen(buffer.data);
-        send_tcp(fd, buffer.data, message_size);
+
+        buffer_t message;
+        message.data = buffer.data;
+        message.size = strlen(buffer.data);
+        send_tcp(fd, message);
 
         if (args_count == 2) {
             struct stat st;
@@ -417,11 +422,15 @@ bool post(sockets_t sockets, char *args) {
             size_t file_size = st.st_size;
             // TODO: check file size
             sprintf(buffer.data, " %s %ld ", name, file_size);
-            message_size = strlen(buffer.data);
-            send_tcp(fd, buffer.data, message_size);
+            message.size = strlen(buffer.data);
+            
+            send_tcp(fd, message);
             send_file_tcp(fd, name, file_size);
         }
-        send_tcp(fd, "\n", 1);
+
+        message.data = "\n";
+        message.size = 1;
+        send_tcp(fd, message);
         
         receive_tcp(fd, buffer);
         close(fd);
@@ -616,7 +625,10 @@ bool retrieve(sockets_t sockets, char *args) {
         sprintf(buffer.data, "RTV %s %s %04d\n", uid, active_group, mid);
     }
 
-    send_tcp(fd, buffer.data, 18);
+    buffer_t message;
+    message.data = buffer.data;
+    message.size = 18;
+    send_tcp(fd, message);
 
     int bytes_read = receive_tcp(fd, buffer);
 
