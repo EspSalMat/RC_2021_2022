@@ -1,8 +1,6 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
-#include "../common/common.h"
-
 bool show_uid();
 bool register_user(sockets_t sockets, char *args);
 bool unregister_user(sockets_t sockets, char *args);

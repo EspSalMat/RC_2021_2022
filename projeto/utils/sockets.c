@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "common.h"
+#include "sockets.h"
 
 struct addrinfo *get_server_address(const char *ip, const char *port, int socktype) {
     struct addrinfo hints, *res;

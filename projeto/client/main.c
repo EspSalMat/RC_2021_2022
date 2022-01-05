@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "../common/common.h"
+#include "../utils/sockets.h"
 #include "commands.h"
 
 #define DEFAULT_PORT "58054"

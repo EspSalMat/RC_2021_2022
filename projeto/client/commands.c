@@ -7,7 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "../common/common.h"
+#include "../utils/sockets.h"
+#include "../utils/validate.h"
 #include "commands.h"
 
 char uid[6];
@@ -41,10 +42,10 @@ void get_udp_reply(char *udp_reply, int size, int server_fd, struct addrinfo *se
 }
 
 bool show_uid() {
-    if (logged_in)
-        printf("%s\n", uid);
-    else
+    if (!logged_in)
         printf("You are not logged in\n");
+    else
+        printf("%s\n", uid);
 
     return false;
 }
@@ -56,8 +57,8 @@ bool register_user(sockets_t sockets, char *args) {
     char message[20];
     sprintf(message, "REG %s %s\n", id, password);
 
-    char reply[8];
-    get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[9];
+    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
 
     if (strcmp(reply, "RRG OK\n") == 0)
         printf("User successfully registered\n");
@@ -78,8 +79,8 @@ bool unregister_user(sockets_t sockets, char *args) {
     char message[20];
     sprintf(message, "UNR %s %s\n", id, password);
 
-    char reply[8];
-    get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[9];
+    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
 
     if (strcmp(reply, "RUN OK\n") == 0)
         printf("User successfully unregistered\n");
@@ -92,6 +93,11 @@ bool unregister_user(sockets_t sockets, char *args) {
 }
 
 bool login(sockets_t sockets, char *args) {
+    if (logged_in) {
+        printf("You are already logged in\n");
+        return false;
+    }
+
     char id[6], password[9];
     sscanf(args, "%5s%8s", id, password);
 
@@ -101,8 +107,8 @@ bool login(sockets_t sockets, char *args) {
     strncpy(uid, id, 5);
     strncpy(pass, password, 8);
 
-    char reply[8] = {0};
-    get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[9] = {0};
+    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
 
     if (strcmp(reply, "RLO OK\n") == 0) {
         printf("You are now logged in\n");
@@ -118,14 +124,19 @@ bool login(sockets_t sockets, char *args) {
 }
 
 bool logout(sockets_t sockets) {
+    if (!logged_in) {
+        printf("You are not logged in\n");
+        return false;
+    }
+    
     char message[20];
     sprintf(message, "OUT %s %s\n", uid, pass);
 
     memset(uid, 0, sizeof uid);
     memset(pass, 0, sizeof pass);
 
-    char reply[8] = {0};
-    get_udp_reply(reply, 8, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[9] = {0};
+    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
 
     if (strcmp(reply, "ROU OK\n") == 0) {
         printf("You are now logged out\n");
@@ -153,8 +164,8 @@ bool list_groups(sockets_t sockets) {
     char message[5];
     strcpy(message, "GLS\n");
 
-    char reply[3274];
-    get_udp_reply(reply, 3274, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[3275];
+    get_udp_reply(reply, 3275, sockets.udp_fd, sockets.udp_addr, message);
 
     char prefix[4];
     int n, offset;
@@ -182,8 +193,8 @@ bool subscribe_group(sockets_t sockets, char *args) {
     char message[39];
     sprintf(message, "GSR %s %02d %s\n", uid, gid, name);
 
-    char reply[11];
-    get_udp_reply(reply, 11, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[12];
+    get_udp_reply(reply, 12, sockets.udp_fd, sockets.udp_addr, message);
 
     char prefix[4], status[8];
     sscanf(reply, "%3s%7s", prefix, status);
@@ -193,7 +204,7 @@ bool subscribe_group(sockets_t sockets, char *args) {
         else if (strcmp(status, "NEW") == 0) {
             int new_gid;
             sscanf(reply + 8, "%d", &new_gid);
-            printf("New group created and subscribed: %02d – \"%s\"\n", new_gid, name);
+            printf("New group created and subscribed: %02d - \"%s\"\n", new_gid, name);
         } else if (strcmp(status, "E_USR") == 0)
             printf("Invalid user id\n");
         else if (strcmp(status, "E_GRP") == 0)
@@ -221,8 +232,8 @@ bool unsubscribe_group(sockets_t sockets, char *args) {
     char message[14];
     sprintf(message, "GUR %s %02d\n", uid, gid);
 
-    char reply[10];
-    get_udp_reply(reply, 10, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[11];
+    get_udp_reply(reply, 11, sockets.udp_fd, sockets.udp_addr, message);
 
     if (strcmp(reply, "RGU OK\n") == 0)
         printf("Group successfully unsubscribed\n");
@@ -241,8 +252,8 @@ bool list_user_groups(sockets_t sockets) {
     char message[11];
     sprintf(message, "GLM %s\n", uid);
 
-    char reply[3274];
-    get_udp_reply(reply, 3274, sockets.udp_fd, sockets.udp_addr, message);
+    char reply[3275];
+    get_udp_reply(reply, 3275, sockets.udp_fd, sockets.udp_addr, message);
 
     char prefix[4], status[6];
     int offset;
@@ -263,15 +274,15 @@ bool list_user_groups(sockets_t sockets) {
 }
 
 bool select_group(char *args) {
-    if (!logged_in)
+    if (!logged_in) {
         printf("You are not logged in\n");
-    else {
-        int gid;
-        sscanf(args, "%2d", &gid);
-        sprintf(active_group, "%02d", gid);
-        group_selected = true;
-        printf("Group %s – \"%s\" is now the active group\n", active_group);
+        return false;
     }
+
+    sscanf(args, "%2s", active_group);
+    group_selected = true;
+    printf("Group %s - \"%s\" is now the active group\n", active_group);
+    
     return false;
 }
 
@@ -348,6 +359,7 @@ bool list_group_users(sockets_t sockets) {
     send_tcp(fd, message, 7);
 
     int bytes_read = receive_tcp(fd, buffer);
+    close(fd);
 
     int offset;
     char prefix[4], status[4];
@@ -361,12 +373,9 @@ bool list_group_users(sockets_t sockets) {
         }
     }
 
-    close(fd);
 
     return false;
 }
-
-bool is_mid(char *status) { return strlen(status) == 4; }
 
 bool post(sockets_t sockets, char *args) {
     if (!logged_in) {
@@ -413,8 +422,9 @@ bool post(sockets_t sockets, char *args) {
             send_file_tcp(fd, name, file_size);
         }
         send_tcp(fd, "\n", 1);
-
+        
         receive_tcp(fd, buffer);
+        close(fd);
 
         char prefix[4], status[5];
         sscanf(buffer.data, "%3s%4s", prefix, status);
@@ -429,8 +439,6 @@ bool post(sockets_t sockets, char *args) {
         } else {
             return true;
         }
-
-        close(fd);
     }
 
     return false;
@@ -447,11 +455,6 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
     enum { MID, UID, TSIZE, TEXT, FILE_CHECK, FNAME, FSIZE, FDATA } current_state;
 
     while (messages_read < message_count) {
-        if (offset >= bytes_read - 1) {
-            bytes_read = receive_tcp(fd, buffer);
-            offset = 0;
-        }
-
         switch (current_state) {
         case MID:
             sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc);
@@ -579,6 +582,11 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
 
         default:
             break;
+        }
+
+        if (offset >= bytes_read - 1) {
+            bytes_read = receive_tcp(fd, buffer);
+            offset = 0;
         }
     }
 }

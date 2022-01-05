@@ -1,5 +1,5 @@
-#ifndef COMMON_H
-#define COMMON_H
+#ifndef UTILS_SOCKETS_H
+#define UTILS_SOCKETS_H
 
 #include <netinet/in.h>
 #include <stdbool.h>
@@ -31,4 +31,4 @@ void send_tcp(int fd, char *message, size_t size);
 void send_file_tcp(int fd, char *filename, size_t size);
 ssize_t receive_tcp(int server_fd, buffer_t buffer);
 
-#endif /* COMMON_H */
+#endif /* UTILS_SOCKETS_H */
