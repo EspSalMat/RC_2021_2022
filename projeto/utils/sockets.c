@@ -20,7 +20,7 @@ struct addrinfo *get_server_address(const char *ip, const char *port, int sockty
 
     errcode = getaddrinfo(ip, port, &hints, &res);
     if (errcode != 0)
-        exit(EXIT_FAILURE);
+        return NULL;
 
     return res;
 }
@@ -28,7 +28,7 @@ struct addrinfo *get_server_address(const char *ip, const char *port, int sockty
 ssize_t send_udp(int fd, const char *buffer, const struct sockaddr *addr, const socklen_t addrlen) {
     ssize_t n = sendto(fd, buffer, strlen(buffer), 0, addr, addrlen);
     if (n == -1)
-        exit(EXIT_FAILURE);
+        return -1;
     return n;
 }
 
@@ -40,7 +40,7 @@ bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, sockl
         return true;
 
     if (n == -1)
-        exit(EXIT_FAILURE);
+        return true;
 
     if (n < size)
         buffer[n] = '\0';
@@ -48,40 +48,50 @@ bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, sockl
     return false;
 }
 
-void send_tcp(int fd, buffer_t buffer) {
+bool send_tcp(int fd, buffer_t buffer) {
     char *write_ptr = buffer.data;
     size_t size = buffer.size;
 
     while (size > 0) {
         ssize_t bytes_written = write(fd, write_ptr, size);
         if (bytes_written <= 0)
-            exit(1);
+            return true;
         size -= bytes_written;
         write_ptr += bytes_written;
     }
+
+    return false;
 }
 
-void send_file_tcp(int fd, char *filename, size_t file_size) {
+bool send_file_tcp(int fd, char *filename, size_t file_size) {
     buffer_t buffer;
     create_buffer(buffer, 1024);
     
     FILE *file = fopen(filename, "rb");
     if (file == NULL)
-        exit(EXIT_FAILURE);
+        return true;
     
     while (file_size > 0) {
         size_t bytes = file_size < buffer.size ? file_size : buffer.size;
         bytes = fread(buffer.data, 1, bytes, file);
+        if (bytes <= 0) {
+            fclose(file);
+            return true;
+        }
 
         buffer_t tmp;
         tmp.data = buffer.data;
         tmp.size = bytes;
-        send_tcp(fd, tmp);
+        if (send_tcp(fd, tmp))
+            return true;
 
         file_size -= bytes;
     }
 
-    fclose(file);
+    if (fclose(file) < 0)
+        return true;
+
+    return false;
 }
 
 ssize_t receive_tcp(int server_fd, buffer_t buffer) {
@@ -91,7 +101,7 @@ ssize_t receive_tcp(int server_fd, buffer_t buffer) {
     while (bytes_to_read > 0) {
         ssize_t bytes_read = read(server_fd, read_ptr, bytes_to_read);
         if (bytes_read == -1)
-            exit(1);
+            return -1;
         else if (bytes_read == 0)
             break;
 

@@ -17,6 +17,20 @@ bool logged_in = false;
 char active_group[3];
 bool group_selected = false;
 
+int tcp_connect(sockets_t sockets) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == -1)
+        return fd;
+
+    int n = connect(fd, sockets.tcp_addr->ai_addr, sockets.tcp_addr->ai_addrlen);
+    if (n == -1) {
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
 ssize_t shift_buffer(int fd, buffer_t buffer, int offset, int offset_inc) {
     memcpy(buffer.data, buffer.data + offset, offset_inc);
 
@@ -128,7 +142,7 @@ bool logout(sockets_t sockets) {
         printf("You are not logged in\n");
         return false;
     }
-    
+
     char message[20];
     sprintf(message, "OUT %s %s\n", uid, pass);
 
@@ -282,7 +296,7 @@ bool select_group(char *args) {
     sscanf(args, "%2s", active_group);
     group_selected = true;
     printf("Group %s - \"%s\" is now the active group\n", active_group);
-    
+
     return false;
 }
 
@@ -299,7 +313,7 @@ bool show_gid() {
     return false;
 }
 
-void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset) {
+bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset) {
     int offset_inc;
     char group_name[25];
     char user_id[6];
@@ -309,7 +323,7 @@ void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset)
 
     if (buffer.data[offset] == '\n') {
         printf("%s has no subscribers\n", group_name);
-        return;
+        return false;
     }
 
     printf("%s\n", group_name);
@@ -318,6 +332,8 @@ void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset)
         // Check if all of the buffer has been read
         if (offset == bytes_read || offset == bytes_read - 1) {
             bytes_read = receive_tcp(fd, buffer);
+            if (bytes_read < 0)
+                return true;
             offset = 0;
         }
 
@@ -326,12 +342,16 @@ void show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset)
         // Check if the buffer ended with an incomplete user id
         if (offset + offset_inc == bytes_read) {
             bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
+            if (bytes_read < 0)
+                return true;
             offset = 0;
         } else {
             offset += offset_inc;
             printf("%s\n", user_id);
         }
     }
+
+    return false;
 }
 
 bool list_group_users(sockets_t sockets) {
@@ -343,13 +363,9 @@ bool list_group_users(sockets_t sockets) {
         return false;
     }
 
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    int fd = tcp_connect(sockets);
     if (fd == -1)
-        exit(EXIT_FAILURE);
-
-    int n = connect(fd, sockets.tcp_addr->ai_addr, sockets.tcp_addr->ai_addrlen);
-    if (n == -1)
-        exit(EXIT_FAILURE);
+        return true;
 
     buffer_t buffer;
     create_buffer(buffer, 1025);
@@ -358,10 +374,16 @@ bool list_group_users(sockets_t sockets) {
     create_buffer(message, 8);
     message.size = 7;
     sprintf(message.data, "ULS %s\n", active_group);
-    send_tcp(fd, message);
+    if (send_tcp(fd, message)) {
+        close(fd);
+        return true;
+    }
 
     int bytes_read = receive_tcp(fd, buffer);
-    close(fd);
+    if (bytes_read < 0) {
+        close(fd);
+        return true;
+    }
 
     int offset;
     char prefix[4], status[4];
@@ -369,13 +391,21 @@ bool list_group_users(sockets_t sockets) {
 
     if (strcmp(prefix, "RUL") == 0) {
         if (strcmp(status, "OK") == 0) {
-            show_group_subscribers(fd, buffer, bytes_read, offset);
+            if (show_group_subscribers(fd, buffer, bytes_read, offset)) {
+                close(fd);
+                return true;
+            }
         } else if (strcmp(status, "NOK") == 0) {
             printf("Failed to list subscribed users\n");
         }
+    } else {
+        close(fd);
+        return true;
     }
 
-
+    if (close(fd) == -1)
+        return true;
+    
     return false;
 }
 
@@ -393,17 +423,13 @@ bool post(sockets_t sockets, char *args) {
     int text_size;
     int args_count = sscanf(args, "\"%[^\"]\"%n %s", text, &text_size, name);
     if (args_count == -1)
-        exit(EXIT_FAILURE);
+        return true;
     else if (args_count >= 1) {
         text_size -= 2;
 
-        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        int fd = tcp_connect(sockets);
         if (fd == -1)
-            exit(EXIT_FAILURE);
-
-        int n = connect(fd, sockets.tcp_addr->ai_addr, sockets.tcp_addr->ai_addrlen);
-        if (n == -1)
-            exit(EXIT_FAILURE);
+            return true;
 
         buffer_t buffer;
         create_buffer(buffer, 158);
@@ -413,27 +439,42 @@ bool post(sockets_t sockets, char *args) {
         buffer_t message;
         message.data = buffer.data;
         message.size = strlen(buffer.data);
-        send_tcp(fd, message);
+        if (send_tcp(fd, message)) {
+            close(fd);
+            return true;
+        }
 
         if (args_count == 2) {
             struct stat st;
             if (stat(name, &st) != 0)
-                exit(EXIT_FAILURE);
+                return true;
             size_t file_size = st.st_size;
             // TODO: check file size
             sprintf(buffer.data, " %s %ld ", name, file_size);
             message.size = strlen(buffer.data);
-            
-            send_tcp(fd, message);
-            send_file_tcp(fd, name, file_size);
+
+            if (send_tcp(fd, message)) {
+                close(fd);
+                return true;
+            }
+            if (send_file_tcp(fd, name, file_size)) {
+                close(fd);
+                return true;
+            }
         }
 
         message.data = "\n";
         message.size = 1;
-        send_tcp(fd, message);
-        
-        receive_tcp(fd, buffer);
-        close(fd);
+        if (send_tcp(fd, message)) {
+            close(fd);
+            return true;
+        }
+
+        ssize_t bytes_read = receive_tcp(fd, buffer);
+        if (close(fd) == -1)
+            return true;
+        if (bytes_read < 0)
+            return true;
 
         char prefix[4], status[5];
         sscanf(buffer.data, "%3s%4s", prefix, status);
@@ -453,7 +494,7 @@ bool post(sockets_t sockets, char *args) {
     return false;
 }
 
-void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int message_count) {
+bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, int message_count) {
     char mid[5], user_id[6], text[241], slash[2], file_name[25];
     int offset_inc, text_size, messages_read = 0;
     size_t file_size;
@@ -469,6 +510,8 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
             sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
+                if (bytes_read < 0)
+                    return true;
                 offset = 0;
             } else {
                 current_state = UID;
@@ -480,6 +523,8 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
             sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
+                if (bytes_read < 0)
+                    return true;
                 offset = 0;
             } else {
                 current_state = TSIZE;
@@ -491,6 +536,8 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
             sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
+                if (bytes_read < 0)
+                    return true;
                 offset = 0;
             } else {
                 current_state = TEXT;
@@ -516,6 +563,8 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
 
                 if (offset >= bytes_read) {
                     bytes_read = receive_tcp(fd, buffer);
+                    if (bytes_read < 0)
+                        return true;
                     offset = 0;
                 }
             }
@@ -546,6 +595,8 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
             sscanf(buffer.data + offset, "%24s%n", file_name, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
+                if (bytes_read < 0)
+                    return true;
                 offset = 0;
             } else {
                 current_state = FSIZE;
@@ -557,6 +608,8 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
             sscanf(buffer.data + offset, "%lu%n", &file_size, &offset_inc);
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
+                if (bytes_read < 0)
+                    return true;
                 offset = 0;
             } else {
                 current_state = FDATA;
@@ -565,8 +618,10 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
             break;
 
         case FDATA:
-            //printf("FDATA\n");
+            // printf("FDATA\n");
             file = fopen(file_name, "wb");
+            if (file != NULL)
+                return true;
 
             // Write file
             while (file_size > 0) {
@@ -579,12 +634,18 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
 
                 if (offset >= bytes_read) {
                     bytes_read = receive_tcp(fd, buffer);
+                    if (bytes_read < 0) {
+                        fclose(file);
+                        return true;
+                    }
                     offset = 0;
                 }
             }
 
             printf(" file stored: %s\n", file_name);
-            fclose(file);
+            if (fclose(file) == EOF)
+                return true;
+
             current_state = MID;
             messages_read++;
             break;
@@ -595,9 +656,13 @@ void retrieve_messages(int fd, buffer_t buffer, int bytes_read, int offset, int 
 
         if (offset >= bytes_read - 1) {
             bytes_read = receive_tcp(fd, buffer);
+            if (bytes_read < 0)
+                return true;
             offset = 0;
         }
     }
+
+    return false;
 }
 
 bool retrieve(sockets_t sockets, char *args) {
@@ -609,13 +674,9 @@ bool retrieve(sockets_t sockets, char *args) {
         return false;
     }
 
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    int fd = tcp_connect(sockets);
     if (fd == -1)
-        exit(EXIT_FAILURE);
-
-    int n = connect(fd, sockets.tcp_addr->ai_addr, sockets.tcp_addr->ai_addrlen);
-    if (n == -1)
-        exit(EXIT_FAILURE);
+        return true;
 
     buffer_t buffer;
     create_buffer(buffer, 1025);
@@ -628,9 +689,16 @@ bool retrieve(sockets_t sockets, char *args) {
     buffer_t message;
     message.data = buffer.data;
     message.size = 18;
-    send_tcp(fd, message);
+    if (send_tcp(fd, message)) {
+        close(fd);
+        return true;
+    }
 
     int bytes_read = receive_tcp(fd, buffer);
+    if (bytes_read < 0) {
+        close(fd);
+        return true;
+    }
 
     int offset, message_count;
     char prefix[4], status[4];
@@ -638,15 +706,19 @@ bool retrieve(sockets_t sockets, char *args) {
 
     if (strcmp(prefix, "RRT") == 0) {
         if (strcmp(status, "OK") == 0) {
-            retrieve_messages(fd, buffer, bytes_read, offset, message_count);
+            if (retrieve_messages(fd, buffer, bytes_read, offset, message_count)) {
+                close(fd);
+                return true;
+            }
         } else if (strcmp(status, "NOK") == 0) {
             printf("Failed to retrieve messages\n");
         }
     } else {
+        close(fd);
         return true;
     }
 
-    close(fd);
-
+    if (close(fd) == -1)
+        return true;
     return false;
 }

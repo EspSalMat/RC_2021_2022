@@ -99,7 +99,14 @@ int main(int argc, char **argv) {
     set_timeout(sockets.udp_fd, 10);
 
     sockets.udp_addr = get_server_address(args.ip, args.port, SOCK_DGRAM);
+    if (sockets.udp_addr == NULL)
+        exit(EXIT_FAILURE);
+
     sockets.tcp_addr = get_server_address(args.ip, args.port, SOCK_STREAM);
+    if (sockets.udp_addr == NULL) {
+        freeaddrinfo(sockets.udp_addr);
+        exit(EXIT_FAILURE);
+    }
 
     bool should_exit = false;
     while (!should_exit) {
