@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "../utils/sockets.h"
 #include "commands.h"
@@ -42,9 +43,10 @@ bool process_command(sockets_t sockets) {
     char raw_input[MAX_LINE];
     char command[MAX_COMMAND];
     int command_length;
-
+    errno = 0;
+    
     if (fgets(raw_input, sizeof raw_input, stdin) == NULL) {
-        exit(EXIT_FAILURE);
+        return true;
     }
     sscanf(raw_input, "%11s%n", command, &command_length);
 
@@ -113,6 +115,9 @@ int main(int argc, char **argv) {
         printf("> ");
         should_exit = process_command(sockets);
     }
+
+    if (errno != 0)
+        perror("Error");
 
     freeaddrinfo(sockets.udp_addr);
     freeaddrinfo(sockets.tcp_addr);

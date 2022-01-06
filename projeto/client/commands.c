@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -42,17 +43,19 @@ ssize_t shift_buffer(int fd, buffer_t buffer, int offset, int offset_inc) {
     return receive_tcp(fd, tmp);
 }
 
-void get_udp_reply(char *udp_reply, int size, int server_fd, struct addrinfo *server_addr,
-                   char *message) {
-    bool res;
+bool get_udp_reply(int fd, buffer_t message, buffer_t reply, struct addrinfo *server_addr) {
+    ssize_t response = -1;
     unsigned int attempts = 0;
 
     do {
-        struct sockaddr_in addr;
-        socklen_t addrlen;
-        send_udp(server_fd, message, server_addr->ai_addr, server_addr->ai_addrlen);
-        res = receive_udp(server_fd, udp_reply, size, &addr, &addrlen);
-    } while (res && (++attempts) < 3);
+        if (send_udp(fd, message, server_addr->ai_addr, server_addr->ai_addrlen) > 0) {
+            struct sockaddr_in addr;
+            socklen_t addrlen;
+            response = receive_udp(fd, reply, &addr, &addrlen);
+        }
+    } while (response <= 0 && (++attempts) < 3);
+
+    return response <= 0;
 }
 
 bool show_uid() {
@@ -66,42 +69,58 @@ bool show_uid() {
 
 bool register_user(sockets_t sockets, char *args) {
     char id[6], password[9];
-    sscanf(args, "%s%s", id, password);
-
-    char message[20];
-    sprintf(message, "REG %s %s\n", id, password);
-
-    char reply[9];
-    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
-
-    if (strcmp(reply, "RRG OK\n") == 0)
-        printf("User successfully registered\n");
-    else if (strcmp(reply, "RRG DUP\n") == 0)
-        printf("User already registered\n");
-    else if (strcmp(reply, "RRG NOK\n") == 0)
-        printf("User registration failed\n");
-    else
+    if (sscanf(args, "%s%s", id, password) < 0)
         return true;
+
+    buffer_t message;
+    create_buffer(message, 20);
+    int n = sprintf(message.data, "REG %s %s\n", id, password);
+    if (n < 0)
+        return true;
+
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 9);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+
+    if (strcmp(reply.data, "RRG OK\n") == 0)
+        printf("User successfully registered\n");
+    else if (strcmp(reply.data, "RRG DUP\n") == 0)
+        printf("User already registered\n");
+    else if (strcmp(reply.data, "RRG NOK\n") == 0)
+        printf("User registration failed\n");
+    else {
+        errno = EPROTO;
+        return true;
+    }
 
     return false;
 }
 
 bool unregister_user(sockets_t sockets, char *args) {
     char id[6], password[9];
-    sscanf(args, "%5s%8s", id, password);
-
-    char message[20];
-    sprintf(message, "UNR %s %s\n", id, password);
-
-    char reply[9];
-    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
-
-    if (strcmp(reply, "RUN OK\n") == 0)
-        printf("User successfully unregistered\n");
-    else if (strcmp(reply, "RUN NOK\n") == 0)
-        printf("User unregistration failed\n");
-    else
+    if (sscanf(args, "%5s%8s", id, password) < 0)
         return true;
+
+    buffer_t message;
+    create_buffer(message, 20);
+    int n = sprintf(message.data, "UNR %s %s\n", id, password);
+    if (n < 0)
+        return true;
+
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 9);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+
+    if (strcmp(reply.data, "RUN OK\n") == 0)
+        printf("User successfully unregistered\n");
+    else if (strcmp(reply.data, "RUN NOK\n") == 0)
+        printf("User unregistration failed\n");
+    else {
+        errno = EPROTO;
+        return true;
+    }
 
     return false;
 }
@@ -113,24 +132,31 @@ bool login(sockets_t sockets, char *args) {
     }
 
     char id[6], password[9];
-    sscanf(args, "%5s%8s", id, password);
+    if (sscanf(args, "%5s%8s", id, password) < 0)
+        return true;
 
-    char message[20];
-    sprintf(message, "LOG %s %s\n", id, password);
+    buffer_t message;
+    create_buffer(message, 20);
+    int n = sprintf(message.data, "LOG %s %s\n", id, password);
+    if (n < 0)
+        return true;
 
     strncpy(uid, id, 5);
     strncpy(pass, password, 8);
 
-    char reply[9] = {0};
-    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 9);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
 
-    if (strcmp(reply, "RLO OK\n") == 0) {
+    if (strcmp(reply.data, "RLO OK\n") == 0) {
         printf("You are now logged in\n");
         logged_in = true;
-    } else if (strcmp(reply, "RLO NOK\n") == 0) {
+    } else if (strcmp(reply.data, "RLO NOK\n") == 0) {
         printf("Login failed\n");
         logged_in = false;
     } else {
+        errno = EPROTO;
         return true;
     }
 
@@ -143,52 +169,68 @@ bool logout(sockets_t sockets) {
         return false;
     }
 
-    char message[20];
-    sprintf(message, "OUT %s %s\n", uid, pass);
+    buffer_t message;
+    create_buffer(message, 20);
+    int n = sprintf(message.data, "OUT %s %s\n", uid, pass);
+    if (n < 0)
+        return true;
 
-    memset(uid, 0, sizeof uid);
-    memset(pass, 0, sizeof pass);
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 9);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
 
-    char reply[9] = {0};
-    get_udp_reply(reply, 9, sockets.udp_fd, sockets.udp_addr, message);
-
-    if (strcmp(reply, "ROU OK\n") == 0) {
+    if (strcmp(reply.data, "ROU OK\n") == 0) {
         printf("You are now logged out\n");
+        memset(uid, 0, sizeof uid);
+        memset(pass, 0, sizeof pass);
         logged_in = false;
         group_selected = false;
-    } else if (strcmp(reply, "ROU NOK\n") == 0) {
+    } else if (strcmp(reply.data, "ROU NOK\n") == 0) {
         printf("Logout failed\n");
+    } else {
+        errno = EPROTO;
+        return true;
     }
 
     return false;
 }
 
-void show_groups(char *reply, int offset, int n) {
+bool show_groups(char *reply, int n) {
+    int offset = 6;
     char *cursor = reply + offset;
     for (size_t i = 0; i < n; i++) {
         char gid[3], name[25], mid[5];
         int inc;
-        sscanf(cursor, "%2s%24s%4s%n", gid, name, mid, &inc);
+        if (sscanf(cursor, "%2s%24s%4s%n", gid, name, mid, &inc) < 0)
+            return true;
         cursor += inc;
         printf("Group %s - \"%s\"\n", gid, name);
     }
+
+    return false;
 }
 
 bool list_groups(sockets_t sockets) {
-    char message[5];
-    strcpy(message, "GLS\n");
+    buffer_t message;
+    message.data = "GLS\n";
+    message.size = 4;
 
-    char reply[3275];
-    get_udp_reply(reply, 3275, sockets.udp_fd, sockets.udp_addr, message);
+    buffer_t reply;
+    create_buffer(reply, 3275);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
 
-    char prefix[4];
-    int n, offset;
-    sscanf(reply, "%3s%d%n", prefix, &n, &offset);
-    if (strcmp(prefix, "RGL") == 0) {
+    if (strncmp(reply.data, "RGL ", 4) == 0) {
+        int n;
+        if (sscanf(reply.data + 4, "%2d\n", &n) < 0)
+            return true;
         if (n == 0)
             printf("No groups to list\n");
         else
-            show_groups(reply, offset, n);
+            return show_groups(reply.data, n);
+    } else {
+        errno = EPROTO;
+        return true;
     }
 
     return false;
@@ -202,33 +244,40 @@ bool subscribe_group(sockets_t sockets, char *args) {
 
     char name[25];
     int gid;
-    sscanf(args, "%2d%24s", &gid, name);
+    if (sscanf(args, "%2d%24s", &gid, name) < 0)
+        return true;
 
-    char message[39];
-    sprintf(message, "GSR %s %02d %s\n", uid, gid, name);
+    buffer_t message;
+    create_buffer(message, 39);
+    int n = sprintf(message.data, "GSR %s %02d %s\n", uid, gid, name);
+    if (n < 0)
+        return true;
 
-    char reply[12];
-    get_udp_reply(reply, 12, sockets.udp_fd, sockets.udp_addr, message);
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 13);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
 
-    char prefix[4], status[8];
-    sscanf(reply, "%3s%7s", prefix, status);
-    if (strcmp(prefix, "RGS") == 0) {
-        if (strcmp(status, "OK") == 0)
-            printf("You are now subscribed\n");
-        else if (strcmp(status, "NEW") == 0) {
-            int new_gid;
-            sscanf(reply + 8, "%d", &new_gid);
-            printf("New group created and subscribed: %02d - \"%s\"\n", new_gid, name);
-        } else if (strcmp(status, "E_USR") == 0)
-            printf("Invalid user id\n");
-        else if (strcmp(status, "E_GRP") == 0)
-            printf("Invalid group id\n");
-        else if (strcmp(status, "E_GNAME") == 0)
-            printf("Invalid group name\n");
-        else if (strcmp(status, "E_FULL") == 0)
-            printf("Group could not be created\n");
-        else if (strcmp(status, "NOK") == 0)
-            printf("Subscription failed\n");
+    if (strcmp(reply.data, "RGS OK\n") == 0)
+        printf("You are now subscribed\n");
+    else if (strcmp(reply.data, "RGS E_USR\n") == 0)
+        printf("Invalid user id\n");
+    else if (strcmp(reply.data, "RGS E_GRP\n") == 0)
+        printf("Invalid group id\n");
+    else if (strcmp(reply.data, "RGS E_GNAME\n") == 0)
+        printf("Invalid group name\n");
+    else if (strcmp(reply.data, "RGS E_FULL\n") == 0)
+        printf("Group could not be created\n");
+    else if (strcmp(reply.data, "RGS NOK\n") == 0)
+        printf("Subscription failed\n");
+    else if (strncmp(reply.data, "RGS NEW ", 8) == 0) {
+        int new_gid;
+        if (sscanf(reply.data + 8, "%2d\n", &new_gid) < 0)
+            return false;
+        printf("New group created and subscribed: %02d - \"%s\"\n", new_gid, name);
+    } else {
+        errno = EPROTO;
+        return true;
     }
 
     return false;
@@ -241,19 +290,32 @@ bool unsubscribe_group(sockets_t sockets, char *args) {
     }
 
     int gid;
-    sscanf(args, "%2d", &gid);
+    if (sscanf(args, "%2d", &gid) < 0)
+        return true;
 
-    char message[14];
-    sprintf(message, "GUR %s %02d\n", uid, gid);
+    buffer_t message;
+    create_buffer(message, 14);
+    int n = sprintf(message.data, "GUR %s %02d\n", uid, gid);
+    if (n < 0)
+        return true;
 
-    char reply[11];
-    get_udp_reply(reply, 11, sockets.udp_fd, sockets.udp_addr, message);
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 11);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
 
-    if (strcmp(reply, "RGU OK\n") == 0)
+    if (strcmp(reply.data, "RGU OK\n") == 0)
         printf("Group successfully unsubscribed\n");
-    else if (strcmp(reply, "RGU NOK\n") == 0)
+    else if (strcmp(reply.data, "RGU E_USR\n") == 0)
+        printf("Invalid user id\n");
+    else if (strcmp(reply.data, "RGU E_GRP\n") == 0)
+        printf("Invalid group id\n");
+    else if (strcmp(reply.data, "RGU NOK\n") == 0)
         printf("Unsubscription failed\n");
-
+    else {
+        errno = EPROTO;
+        return true;
+    }
     return false;
 }
 
@@ -263,25 +325,30 @@ bool list_user_groups(sockets_t sockets) {
         return false;
     }
 
-    char message[11];
-    sprintf(message, "GLM %s\n", uid);
+    buffer_t message;
+    create_buffer(message, 11);
+    int n = sprintf(message.data, "GLM %s\n", uid);
+    if (n < 0)
+        return true;
 
-    char reply[3275];
-    get_udp_reply(reply, 3275, sockets.udp_fd, sockets.udp_addr, message);
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 3275);
+    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
 
-    char prefix[4], status[6];
-    int offset;
-    sscanf(reply, "%3s%5s%n", prefix, status, &offset);
-    if (strcmp(prefix, "RGM") == 0) {
-        if (strcmp(status, "E_USR") == 0)
-            printf("Invalid user ID\n");
-        else {
-            int n = atoi(status);
-            if (n == 0)
-                printf("No groups subscribed\n");
-            else
-                show_groups(reply, offset, n);
-        }
+    if (strcmp(reply.data, "RGM E_USR\n") == 0) {
+        printf("Invalid user ID\n");
+    } else if (strncmp(reply.data, "RGM ", 4) == 0) {
+        int n;
+        if (sscanf(reply.data + 4, "%2d\n", &n) < 0)
+            return true;
+        if (n == 0)
+            printf("No groups subscribed\n");
+        else
+            return show_groups(reply.data, n);
+    } else {
+        errno = EPROTO;
+        return true;
     }
 
     return false;
@@ -293,7 +360,8 @@ bool select_group(char *args) {
         return false;
     }
 
-    sscanf(args, "%2s", active_group);
+    if (sscanf(args, "%2s", active_group) < 0)
+        return true;
     group_selected = true;
     printf("Group %s - \"%s\" is now the active group\n", active_group);
 
@@ -313,12 +381,15 @@ bool show_gid() {
     return false;
 }
 
-bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset) {
+bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
+    int offset = 7;
     int offset_inc;
     char group_name[25];
     char user_id[6];
 
-    sscanf(buffer.data + offset, "%24s%n", group_name, &offset_inc);
+    if (sscanf(buffer.data + offset, "%24s%n", group_name, &offset_inc) < 0)
+        return true;
+
     offset += offset_inc;
 
     if (buffer.data[offset] == '\n') {
@@ -337,7 +408,8 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read, int offset)
             offset = 0;
         }
 
-        sscanf(buffer.data + offset, " %5s%n", user_id, &offset_inc);
+        if (sscanf(buffer.data + offset, " %5s%n", user_id, &offset_inc) < 0)
+            return true;
 
         // Check if the buffer ended with an incomplete user id
         if (offset + offset_inc == bytes_read) {
@@ -372,8 +444,11 @@ bool list_group_users(sockets_t sockets) {
 
     buffer_t message;
     create_buffer(message, 8);
-    message.size = 7;
-    sprintf(message.data, "ULS %s\n", active_group);
+    int n = sprintf(message.data, "ULS %s\n", active_group);
+    if (n < 0)
+        return true;
+
+    message.size = n;
     if (send_tcp(fd, message)) {
         close(fd);
         return true;
@@ -385,27 +460,22 @@ bool list_group_users(sockets_t sockets) {
         return true;
     }
 
-    int offset;
-    char prefix[4], status[4];
-    sscanf(buffer.data, "%3s%3s%n", prefix, status, &offset);
-
-    if (strcmp(prefix, "RUL") == 0) {
-        if (strcmp(status, "OK") == 0) {
-            if (show_group_subscribers(fd, buffer, bytes_read, offset)) {
-                close(fd);
-                return true;
-            }
-        } else if (strcmp(status, "NOK") == 0) {
-            printf("Failed to list subscribed users\n");
+    if (strncmp(buffer.data, "RUL OK ", 7) == 0) {
+        if (show_group_subscribers(fd, buffer, bytes_read)) {
+            close(fd);
+            return true;
         }
+    } else if (strcmp(buffer.data, "RUL NOK\n") == 0) {
+        printf("Failed to list subscribed users\n");
     } else {
         close(fd);
+        errno = EPROTO;
         return true;
     }
 
     if (close(fd) == -1)
         return true;
-    
+
     return false;
 }
 
@@ -434,11 +504,14 @@ bool post(sockets_t sockets, char *args) {
         buffer_t buffer;
         create_buffer(buffer, 158);
 
-        sprintf(buffer.data, "PST %s %s %d %s", uid, active_group, text_size, text);
+        int n = sprintf(buffer.data, "PST %s %s %d %s", uid, active_group, text_size, text);
+        if (n < 0)
+            return true;
 
         buffer_t message;
         message.data = buffer.data;
-        message.size = strlen(buffer.data);
+        message.size = n;
+
         if (send_tcp(fd, message)) {
             close(fd);
             return true;
@@ -449,9 +522,16 @@ bool post(sockets_t sockets, char *args) {
             if (stat(name, &st) != 0)
                 return true;
             size_t file_size = st.st_size;
-            // TODO: check file size
-            sprintf(buffer.data, " %s %ld ", name, file_size);
-            message.size = strlen(buffer.data);
+            
+            if (file_size >= 10000000000) {
+                printf("File is too large.\n");
+                return false;
+            }
+                
+            int n = sprintf(buffer.data, " %s %ld ", name, file_size);
+            if (n < 0)
+                return true;
+            message.size = n;
 
             if (send_tcp(fd, message)) {
                 close(fd);
@@ -476,17 +556,25 @@ bool post(sockets_t sockets, char *args) {
         if (bytes_read < 0)
             return true;
 
-        char prefix[4], status[5];
-        sscanf(buffer.data, "%3s%4s", prefix, status);
+        if (strcmp(buffer.data, "RPT NOK\n") == 0) {
+            printf("Failed to post message\n");
 
-        if (strcmp(prefix, "RPT") == 0) {
-            if (strcmp(status, "NOK") == 0) {
-                printf("Failed to post message\n");
-            } else if (is_mid(status)) {
+        } else if (strncmp(buffer.data, "RPT ", 4) == 0) {
+            char status[5];
+
+            if (sscanf(buffer.data + 4, "%4s\n", status) < 0)
+                return true;
+
+            if (is_mid(status))
                 printf("Posted message number %s to group %s - \"(group_name)\"\n", status,
                        active_group);
+
+            else {
+                errno = EPROTO;
+                return true;
             }
         } else {
+            errno = EPROTO;
             return true;
         }
     }
@@ -494,9 +582,9 @@ bool post(sockets_t sockets, char *args) {
     return false;
 }
 
-bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, int message_count) {
-    char mid[5], user_id[6], text[241], slash[2], file_name[25];
-    int offset_inc, text_size, messages_read = 0;
+bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_count) {
+    char mid[5], user_id[6], text[242], slash[2], file_name[25];
+    int offset = 9, offset_inc, text_size, messages_read = 0;
     size_t file_size;
     FILE *file;
 
@@ -507,7 +595,9 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
     while (messages_read < message_count) {
         switch (current_state) {
         case MID:
-            sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc);
+
+            if (sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc) < 0)
+                return true;
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
@@ -520,7 +610,8 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
             break;
 
         case UID:
-            sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc);
+            if (sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc) < 0)
+                return true;
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
@@ -533,7 +624,8 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
             break;
 
         case TSIZE:
-            sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc);
+            if (sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc) < 0)
+                return true;
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
@@ -569,16 +661,13 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
                 }
             }
 
-            cursor--;
-            if (*cursor == '\n')
-                *cursor = '\0';
-
             current_state = FILE_CHECK;
             break;
 
         case FILE_CHECK:
             slash[0] = '\0';
-            sscanf(buffer.data + offset, "%1s%n", slash, &offset_inc);
+            if (sscanf(buffer.data + offset, "%1s%n", slash, &offset_inc) < 0)
+                return true;
             printf("%s - \"%s\";", mid, text);
 
             if (slash[0] == '/') {
@@ -592,7 +681,8 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
             break;
 
         case FNAME:
-            sscanf(buffer.data + offset, "%24s%n", file_name, &offset_inc);
+            if (sscanf(buffer.data + offset, "%24s%n", file_name, &offset_inc) < 0)
+                return true;
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
@@ -605,7 +695,8 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
             break;
 
         case FSIZE:
-            sscanf(buffer.data + offset, "%lu%n", &file_size, &offset_inc);
+            if (sscanf(buffer.data + offset, "%10lu%n", &file_size, &offset_inc) < 0)
+                return true;
             if (offset + offset_inc >= bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
@@ -618,9 +709,8 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
             break;
 
         case FDATA:
-            // printf("FDATA\n");
             file = fopen(file_name, "wb");
-            if (file != NULL)
+            if (file == NULL)
                 return true;
 
             // Write file
@@ -629,6 +719,8 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
                 if (file_size < bytes)
                     bytes = file_size;
                 ssize_t bytes_written = fwrite(buffer.data + offset, 1, bytes, file);
+                if (bytes_written == 0)
+                    return true;
                 file_size -= bytes_written;
                 offset += bytes_written;
 
@@ -654,12 +746,18 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int offset, 
             break;
         }
 
-        if (offset >= bytes_read - 1) {
+        if (offset >= bytes_read - 1 &&
+            !(messages_read == message_count && buffer.data[offset] == '\n')) {
             bytes_read = receive_tcp(fd, buffer);
             if (bytes_read < 0)
                 return true;
             offset = 0;
         }
+    }
+
+    if (buffer.data[offset] != '\n') {
+        errno = EPROTO;
+        return true;
     }
 
     return false;
@@ -682,13 +780,16 @@ bool retrieve(sockets_t sockets, char *args) {
     create_buffer(buffer, 1025);
 
     int mid;
-    if (sscanf(args, "%4d", &mid) != -1) {
-        sprintf(buffer.data, "RTV %s %s %04d\n", uid, active_group, mid);
-    }
+    if (sscanf(args, "%4d", &mid) < 0)
+        return true;
+    int n = sprintf(buffer.data, "RTV %s %s %04d\n", uid, active_group, mid);
+    if (n < 0)
+        return true;
 
     buffer_t message;
     message.data = buffer.data;
-    message.size = 18;
+    message.size = n;
+
     if (send_tcp(fd, message)) {
         close(fd);
         return true;
@@ -700,21 +801,22 @@ bool retrieve(sockets_t sockets, char *args) {
         return true;
     }
 
-    int offset, message_count;
-    char prefix[4], status[4];
-    sscanf(buffer.data, "%3s%3s%2d%n", prefix, status, &message_count, &offset);
+    if (strncmp(buffer.data, "RRT OK ", 7) == 0) {
+        int message_count;
+        if (sscanf(buffer.data + 7, "%2d", &message_count) < 0)
+            return true;
 
-    if (strcmp(prefix, "RRT") == 0) {
-        if (strcmp(status, "OK") == 0) {
-            if (retrieve_messages(fd, buffer, bytes_read, offset, message_count)) {
-                close(fd);
-                return true;
-            }
-        } else if (strcmp(status, "NOK") == 0) {
-            printf("Failed to retrieve messages\n");
+        if (retrieve_messages(fd, buffer, bytes_read, message_count)) {
+            close(fd);
+            return true;
         }
+    } else if (strcmp(buffer.data, "RRT EOF\n") == 0) {
+        printf("No messages to retrieve\n");
+    } else if (strcmp(buffer.data, "RRT NOK\n") == 0) {
+        printf("Failed to retrieve messages\n");
     } else {
         close(fd);
+        errno = EPROTO;
         return true;
     }
 

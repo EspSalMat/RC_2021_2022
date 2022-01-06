@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,27 +24,22 @@ struct addrinfo *get_server_address(const char *ip, const char *port, int sockty
     return res;
 }
 
-ssize_t send_udp(int fd, const char *buffer, const struct sockaddr *addr, const socklen_t addrlen) {
-    ssize_t n = sendto(fd, buffer, strlen(buffer), 0, addr, addrlen);
-    if (n == -1)
-        return -1;
-    return n;
+ssize_t send_udp(int fd, buffer_t buffer, const struct sockaddr *addr, const socklen_t addrlen) {
+    return sendto(fd, buffer.data, buffer.size, 0, addr, addrlen);
 }
 
-bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, socklen_t *addrlen) {
+ssize_t receive_udp(int fd, buffer_t buffer, struct sockaddr_in *addr, socklen_t *addrlen) {
     *addrlen = sizeof addr;
 
-    ssize_t n = recvfrom(fd, buffer, size, 0, (struct sockaddr *)addr, addrlen);
-    if (errno == EWOULDBLOCK)
-        return true;
+    ssize_t n = recvfrom(fd, buffer.data, buffer.size - 1, 0, (struct sockaddr *)addr, addrlen);
 
     if (n == -1)
-        return true;
+        return n;
 
-    if (n < size)
-        buffer[n] = '\0';
+    if (n < buffer.size)
+        buffer.data[n] = '\0';
 
-    return false;
+    return n;
 }
 
 bool send_tcp(int fd, buffer_t buffer) {

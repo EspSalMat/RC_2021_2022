@@ -23,8 +23,8 @@ typedef struct {
 struct addrinfo *get_server_address(const char *ip, const char *port, int socktype);
 
 // UDP functions
-ssize_t send_udp(int fd, const char *buffer, const struct sockaddr *addr, const socklen_t addrlen);
-bool receive_udp(int fd, char *buffer, int size, struct sockaddr_in *addr, socklen_t *addrlen);
+ssize_t send_udp(int fd, buffer_t buffer, const struct sockaddr *addr, const socklen_t addrlen);
+ssize_t receive_udp(int fd, buffer_t buffer, struct sockaddr_in *addr, socklen_t *addrlen);
 
 // TCP functions
 bool send_tcp(int fd, buffer_t buffer);
