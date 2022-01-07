@@ -69,18 +69,22 @@ bool register_request(int fd, args_t args, buffer_t request, const struct sockad
             printf("UID=%s: new user\n", uid);
         return send_udp(fd, res_ok, addr, addrlen) <= 0;
     } else if (!error && duplicate) {
+        if (args.verbose)
+            printf("UID=%s: duplicated user\n", uid);
         return send_udp(fd, res_dup, addr, addrlen) <= 0;
     }
 
+    if (args.verbose)
+        printf("UID=%s: failed to register user\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
 bool unregister_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
-                      socklen_t addrlen) {
+                        socklen_t addrlen) {
     char uid[6] = {0};
     char pass[9] = {0};
 
-    // REG 95568 password\n
+    // UNR 95568 password\n
     int args_count = sscanf(request.data + 4, "%5s%8s", uid, pass);
     if (args_count < 0)
         return true;
@@ -104,6 +108,78 @@ bool unregister_request(int fd, args_t args, buffer_t request, const struct sock
         return send_udp(fd, res_ok, addr, addrlen) <= 0;
     }
 
+    if (args.verbose)
+        printf("UID=%s: failed to delete user\n", uid);
+    return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
+}
+
+bool login_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
+                   socklen_t addrlen) {
+    char uid[6] = {0};
+    char pass[9] = {0};
+
+    // LOG 95568 password\n
+    int args_count = sscanf(request.data + 4, "%5s%8s", uid, pass);
+    if (args_count < 0)
+        return true;
+
+    // Define buffers for possible responses
+    buffer_t res_nok = {.data = "RLO NOK\n", .size = 8};
+    buffer_t res_ok = {.data = "RLO OK\n", .size = 7};
+
+    bool valid_uid = request.data[9] == ' ' && is_uid(uid);
+    bool valid_password = request.data[18] == '\n' && is_password(pass);
+
+    if (args_count < 2 || !valid_uid || !valid_password) {
+        return send_udp(fd, res_nok, addr, addrlen) <= 0;
+    }
+
+    bool failed = false;
+    bool error = user_login(uid, pass, &failed);
+    if (!error && !failed) {
+        if (args.verbose)
+            printf("UID=%s: login ok\n", uid);
+        return send_udp(fd, res_ok, addr, addrlen) <= 0;
+    }
+
+    if (args.verbose && failed)
+        printf("UID=%s: login not ok\n", uid);
+
+    return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
+}
+
+bool logout_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
+                    socklen_t addrlen) {
+    char uid[6] = {0};
+    char pass[9] = {0};
+
+    // OUT 95568 password\n
+    int args_count = sscanf(request.data + 4, "%5s%8s", uid, pass);
+    if (args_count < 0)
+        return true;
+
+    // Define buffers for possible responses
+    buffer_t res_nok = {.data = "ROU NOK\n", .size = 8};
+    buffer_t res_ok = {.data = "ROU OK\n", .size = 7};
+
+    bool valid_uid = request.data[9] == ' ' && is_uid(uid);
+    bool valid_password = request.data[18] == '\n' && is_password(pass);
+
+    if (args_count < 2 || !valid_uid || !valid_password) {
+        return send_udp(fd, res_nok, addr, addrlen) <= 0;
+    }
+
+    bool failed = false;
+    bool error = user_logout(uid, pass, &failed);
+    if (!error && !failed) {
+        if (args.verbose)
+            printf("UID=%s: logout ok\n", uid);
+        return send_udp(fd, res_ok, addr, addrlen) <= 0;
+    }
+
+    if (args.verbose && failed)
+        printf("UID=%s: logout not ok\n", uid);
+
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -123,7 +199,11 @@ bool handle_udp_request(int fd, args_t args) {
         return register_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     else if (strncmp(request.data, "UNR ", 4) == 0)
         return unregister_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
-    
+    else if (strncmp(request.data, "LOG ", 4) == 0)
+        return login_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
+    else if (strncmp(request.data, "OUT ", 4) == 0)
+        return logout_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
+
     return false;
 }
 

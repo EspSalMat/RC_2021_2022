@@ -61,7 +61,7 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
-        return errno != ENOENT;
+        return false;
     } 
 
     if (check_password(user_pass, pass, failed))
@@ -70,6 +70,66 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
         return false;
 
     if (unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
+        return false;
+
+    return true;
+}
+
+bool user_login(const char *uid, const char *pass, bool *failed) {
+    char user_dirname[20];
+    char user_pass[34];
+    char user_logged_in[35];
+
+    sprintf(user_dirname, "USERS/%s", uid);
+    sprintf(user_logged_in, "%s/%s_login.txt", user_dirname, uid);
+    sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
+
+    struct stat st;
+    if (stat(user_dirname, &st) != 0) {
+        *failed = true;
+        return false;
+    }
+
+    if (check_password(user_pass, pass, failed))
+        return true;
+    else if (*failed)
+        return false;
+
+    FILE *file = fopen(user_logged_in, "w");
+    if (file == NULL)
+        return true;
+    if (fclose(file) == EOF)
+        return true;
+    
+    return false;
+}
+
+bool user_logout(const char *uid, const char *pass, bool *failed) {
+    char user_dirname[20];
+    char user_pass[34];
+    char user_logged_in[35];
+
+    sprintf(user_dirname, "USERS/%s", uid);
+    sprintf(user_logged_in, "%s/%s_login.txt", user_dirname, uid);
+    sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
+
+    struct stat st;
+    if (stat(user_dirname, &st) != 0) {
+        *failed = true;
+        return errno != ENOENT;
+    }
+
+    if (check_password(user_pass, pass, failed))
+        return true;
+    else if (*failed)
+        return false;
+
+    if (stat(user_logged_in, &st) != 0) {
+        *failed = true;
+        return false;
+    }
+
+    if (unlink(user_logged_in) == 0)
         return false;
 
     return true;
