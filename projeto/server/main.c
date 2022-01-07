@@ -10,11 +10,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "../common/common.h"
+#include "../utils/sockets.h"
 
 #define DEFAULT_PORT "58054"
-#define MAX_MESSAGE 128
-#define MAX_RESPONSE 3275
+#define MAX_MESSAGE 129
+#define MAX_RESPONSE 3276
 
 typedef struct {
     char *port;
@@ -91,8 +91,11 @@ int main(int argc, char **argv) {
     ssize_t n;
     struct sockaddr_in addr;
     socklen_t addrlen;
-    char buffer[MAX_MESSAGE];
-    char response[MAX_RESPONSE];
+
+    buffer_t buffer;
+    create_buffer(buffer, MAX_MESSAGE);
+    buffer_t response;
+    create_buffer(response, MAX_RESPONSE);
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1)
@@ -115,34 +118,37 @@ int main(int argc, char **argv) {
 
         if (FD_ISSET(fd, &ready_sockets)) {
             char command[4];
-            n = udp_receive(fd, buffer, sizeof buffer, &addr, &addrlen);
-            sscanf(buffer, "%3s", command);
+            n = receive_udp(fd, buffer, &addr, &addrlen);
+            if (n < 0)
+                exit(EXIT_FAILURE);
+            
+            sscanf(buffer.data, "%3s", command);
 
             if (strcmp(command, "REG") == 0) {
                 char uid[6] = {0};
                 char pass[9] = {0};
-                sscanf(buffer + 4, "%5s%8s", uid, pass);
+                sscanf(buffer.data + 4, "%5s%8s", uid, pass);
 
                 if (register_user(uid, pass)) {
                     if (args.verbose)
                         printf("UID=%s: new user\n", uid);
-                    sprintf(response, "RRG OK\n");
+                    sprintf(response.data, "RRG OK\n");
                 } else {
-                    sprintf(response, "RRG NOK\n");
+                    sprintf(response.data, "RRG NOK\n");
                 }
             } else if (strcmp(command, "UNR") == 0) {
                 char uid[6] = {0};
                 char pass[9] = {0};
-                sscanf(buffer + 4, "%5s%8s", uid, pass);
+                sscanf(buffer.data + 4, "%5s%8s", uid, pass);
 
                 if (unregister_user(uid, pass)) {
-                    sprintf(response, "RUN OK\n");
+                    sprintf(response.data, "RUN OK\n");
                 } else {
-                    sprintf(response, "RUN NOK\n");
+                    sprintf(response.data, "RUN NOK\n");
                 }
             }
-
-            udp_send(fd, response, (struct sockaddr *)&addr, addrlen);
+            
+            send_udp(fd, response, (struct sockaddr *)&addr, addrlen);
         }
     }
 
