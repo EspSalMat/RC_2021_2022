@@ -583,7 +583,7 @@ bool post(sockets_t sockets, char *args) {
 }
 
 bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_count) {
-    char mid[5], user_id[6], text[242], slash[2], file_name[25];
+    char mid[5], user_id[6], text[241], slash[2], file_name[25];
     int offset = 9, offset_inc, text_size, messages_read = 0;
     size_t file_size;
     FILE *file;
@@ -592,10 +592,9 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
 
     enum { MID, UID, TSIZE, TEXT, FILE_CHECK, FNAME, FSIZE, FDATA } current_state;
 
-    while (messages_read < message_count) {
+    while (buffer.data[offset] != '\n') {
         switch (current_state) {
         case MID:
-
             if (sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc) < 0)
                 return true;
             if (offset + offset_inc >= bytes_read) {
@@ -660,15 +659,17 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                     offset = 0;
                 }
             }
-
+            printf("%s - \"%s\";", mid, text);
+            if (messages_read == message_count - 1 && buffer.data[offset] == '\n') {
+                messages_read++;
+                printf("\n");
+            }
             current_state = FILE_CHECK;
             break;
 
         case FILE_CHECK:
-            slash[0] = '\0';
             if (sscanf(buffer.data + offset, "%1s%n", slash, &offset_inc) < 0)
                 return true;
-            printf("%s - \"%s\";", mid, text);
 
             if (slash[0] == '/') {
                 current_state = FNAME;
@@ -733,7 +734,7 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                     offset = 0;
                 }
             }
-
+            
             printf(" file stored: %s\n", file_name);
             if (fclose(file) == EOF)
                 return true;
@@ -747,19 +748,17 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
         }
 
         if (offset >= bytes_read - 1 &&
-            !(messages_read == message_count && buffer.data[offset] == '\n')) {
+            buffer.data[offset] != '\n') {
             bytes_read = receive_tcp(fd, buffer);
             if (bytes_read < 0)
                 return true;
             offset = 0;
         }
     }
-
-    if (buffer.data[offset] != '\n') {
+    if (messages_read != message_count) {
         errno = EPROTO;
         return true;
     }
-
     return false;
 }
 
