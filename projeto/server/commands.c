@@ -6,6 +6,25 @@
 
 #include "commands.h"
 
+bool check_password(const char *user_pass, const char *pass, bool *failed) {
+    char realpass[9];
+
+    FILE *pass_file = fopen(user_pass, "r");
+    if (pass_file == NULL)
+        return true;
+
+    if (fscanf(pass_file, "%8s", realpass) < 0)
+        return true;
+    
+    if (fclose(pass_file) == EOF)
+        return true;
+
+    if (strcmp(pass, realpass) != 0)
+        *failed = true;
+    
+    return false;
+}
+
 bool register_user(const char *uid, const char *pass, bool *duplicate) {
     char user_dirname[20];
     char user_pass[34];
@@ -35,31 +54,20 @@ bool register_user(const char *uid, const char *pass, bool *duplicate) {
 bool unregister_user(const char *uid, const char *pass, bool *failed) {
     char user_dirname[20];
     char user_pass[34];
-    char realpass[9];
 
     sprintf(user_dirname, "USERS/%s", uid);
     sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
 
     struct stat st;
-    if (stat(user_pass, &st) != 0) {
+    if (stat(user_dirname, &st) != 0) {
         *failed = true;
         return errno != ENOENT;
     } 
 
-    FILE *pass_file = fopen(user_pass, "r");
-    if (pass_file == NULL)
+    if (check_password(user_pass, pass, failed))
         return true;
-
-    if (fscanf(pass_file, "%8s", realpass) < 0)
-        return true;
-    
-    if (fclose(pass_file) == EOF)
-        return true;
-
-    if (strcmp(pass, realpass) != 0) {
-        *failed = true;
+    else if (*failed)
         return false;
-    }
 
     if (unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
         return false;
