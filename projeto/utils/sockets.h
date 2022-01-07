@@ -14,12 +14,6 @@ typedef struct {
     buffer.size = N;                                                                            \
     buffer.data = buffer##_data
 
-typedef struct {
-    int udp_fd;
-    struct addrinfo *udp_addr;
-    struct addrinfo *tcp_addr;
-} sockets_t;
-
 struct addrinfo *get_server_address(const char *ip, const char *port, int socktype);
 
 // UDP functions

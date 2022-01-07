@@ -1,6 +1,12 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
+typedef struct {
+    int udp_fd;
+    struct addrinfo *udp_addr;
+    struct addrinfo *tcp_addr;
+} sockets_t;
+
 bool show_uid();
 bool register_user(sockets_t sockets, char *args);
 bool unregister_user(sockets_t sockets, char *args);

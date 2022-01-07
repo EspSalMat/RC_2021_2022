@@ -69,7 +69,7 @@ bool show_uid() {
 
 bool register_user(sockets_t sockets, char *args) {
     char id[6], password[9];
-    if (sscanf(args, "%s%s", id, password) < 0)
+    if (sscanf(args, "%5s%8s", id, password) < 0)
         return true;
 
     buffer_t message;

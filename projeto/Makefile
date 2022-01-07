@@ -4,8 +4,8 @@ CFLAGS=-Wall
 .PHONY: all clean
 
 all: User DS
-User: client/main.c client/commands.c utils/sockets.o utils/validate.o
-DS: server/main.c utils/sockets.o
+User: client/main.c client/commands.o utils/sockets.o utils/validate.o
+DS: server/main.c server/commands.o utils/sockets.o utils/validate.o
 
 proj_54.zip: clean
 	mkdir tmp
