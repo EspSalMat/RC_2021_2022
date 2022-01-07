@@ -12,12 +12,12 @@ proj_54.zip: clean
 	cp -r client tmp/client
 	cp -r server tmp/server
 	cp -r common tmp/common
-	cp Makefile tmp/Makefile
+	sed '10,18d' Makefile > tmp/Makefile
 	cd tmp && zip -r ../proj_54.zip .
 	rm -rf tmp
 
 User DS:
-	$(CC) $(CFLAGS) $^ -g -o $@
+	$(CC) $(CFLAGS) $^ -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@

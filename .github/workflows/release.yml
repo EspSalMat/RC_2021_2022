@@ -3,18 +3,11 @@ name: Projeto CI
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Build
-      run: cd projeto && make
     - name: Bundle
       run: cd projeto && make proj_54.zip
     - name: Create Release
