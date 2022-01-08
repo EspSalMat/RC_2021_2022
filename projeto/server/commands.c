@@ -206,3 +206,107 @@ bool list_groups(grouplist_t *list) {
 
     return false;
 }
+
+bool count_groups(const char *dir_name, int *group_count) {
+    DIR *groups_dir = opendir(dir_name);
+    if (groups_dir == NULL)
+        return true;
+
+    *group_count = 0;
+    struct dirent *gid_dir;
+    while ((gid_dir = readdir(groups_dir)) != NULL) {
+        if (!is_gid(gid_dir->d_name))
+            continue;
+        (*group_count)++;
+    }
+
+    if (closedir(groups_dir) == -1)
+        return true;
+
+    return false;
+}
+
+bool user_subscribe(const char *uid, const char *gid, const char *gname, subscribe_t *result) {
+    char user_logged_in[35];
+    char group_dir[10];
+    char group_msg_dir[14];
+    char group_name_file[30];
+    sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
+
+    struct stat st;
+    if (stat(user_logged_in, &st) != 0) {
+        result->status = SUBS_EUSR;
+        return errno != ENOENT;
+    }
+
+    int group_id = atoi(gid);
+    int groups_count;
+    if (count_groups("GROUPS", &groups_count))
+        return true;
+
+    if (group_id > groups_count) {
+        result->status = SUBS_EGRP;
+        return false;
+    }
+
+    if (group_id == 0) {
+        if (groups_count == 99) {
+            result->status = SUBS_EFULL;
+            return false;
+        }
+
+        group_id = groups_count + 1;
+        result->gid = group_id;
+        result->status = SUBS_NEW;
+
+        sprintf(group_dir, "GROUPS/%02d", group_id);
+        sprintf(group_msg_dir, "%s/MSG", group_dir);
+        sprintf(group_name_file, "%s/%02d_name.txt", group_dir, group_id);
+
+        if (mkdir(group_dir, 0700) == -1)
+            return true;
+
+        if (mkdir(group_msg_dir, 0700) == -1)
+            return true;
+
+        FILE *gname_file = fopen(group_name_file, "w");
+        if (gname_file == NULL)
+            return true;
+
+        if (fwrite(gname, strlen(gname), 1, gname_file) == 0)
+            return true;
+
+        if (fclose(gname_file) == EOF)
+            return true;
+    } else {
+        char group_name[25];
+        sprintf(group_dir, "GROUPS/%s", gid);
+        sprintf(group_name_file, "%s/%s_name.txt", group_dir, gid);
+
+        FILE *gname_file = fopen(group_name_file, "r");
+        if (gname_file == NULL)
+            return true;
+
+        if (fscanf(gname_file, "%24s", group_name) < 0)
+            return true;
+
+        if (strcmp(group_name, gname) != 0) {
+            result->status = SUBS_EGNAME;
+            return false;
+        }
+
+        if (fclose(gname_file) == EOF)
+            return true;
+    }
+
+    char user_subscribe_file[20];
+    sprintf(user_subscribe_file, "%s/%s.txt", group_dir, uid);
+    FILE *subscribe_file = fopen(user_subscribe_file, "w");
+    if (subscribe_file == NULL)
+        return true;
+    
+    if (fclose(subscribe_file) == EOF)
+        return true;
+
+    return false;
+}

@@ -183,6 +183,73 @@ bool logout_request(int fd, args_t args, buffer_t request, const struct sockaddr
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
+bool subscribe_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
+                    socklen_t addrlen) {
+    char uid[6] = {0};
+    char gid[3] = {0};
+    char gname[25] = {0};
+
+    // GSR 12345 12 gname\n
+    int args_count = sscanf(request.data + 4, "%5s%2s%24s", uid, gid, gname);
+    if (args_count < 0)
+        return true;
+
+    // Define buffers for possible responses
+    buffer_t res_nok = {.data = "RGS NOK\n", .size = 8};
+    buffer_t res_ok = {.data = "RGS OK\n", .size = 7};
+    buffer_t res_egrp = {.data = "RGS E_GRP\n", .size = 10};
+    buffer_t res_eusr = {.data = "RGS E_USR\n", .size = 10};
+    buffer_t res_efull = {.data = "RGS E_FULL\n", .size = 11};
+    buffer_t res_gname = {.data = "RGS GNAME\n", .size = 7};
+
+    buffer_t res_new;
+    create_buffer(res_new, 12);
+    res_new.size = 11;
+
+    bool valid_uid = request.data[9] == ' ' && is_uid(uid);
+    bool valid_gid = request.data[12] == ' ' && is_gid(gid);
+    bool valid_gname = is_group_name(gname) && request.data[13 + strlen(gname)] == '\n';
+
+    if (args_count < 3 || !valid_uid || !valid_gid || !valid_gname) {
+        return send_udp(fd, res_nok, addr, addrlen) <= 0;
+    }
+
+    subscribe_t res;
+    bool error = user_subscribe(uid, gid, gname, &res);
+    if (!error) {
+        if (res.status == SUBS_OK) {
+            if (args.verbose)
+                printf("UID=%s: subscribed group: %s - \"%s\"\n", uid, gid, gname);
+            return send_udp(fd, res_ok, addr, addrlen) <= 0;
+        } else if (res.status == SUBS_EGRP) {
+            if (args.verbose)
+                printf("UID=%s: logout ok\n", uid);
+            return send_udp(fd, res_egrp, addr, addrlen) <= 0;
+        } else if (res.status == SUBS_EUSR) {
+            if (args.verbose)
+                printf("UID=%s: logout ok\n", uid);
+            return send_udp(fd, res_eusr, addr, addrlen) <= 0;
+        } else if (res.status == SUBS_EFULL) {
+            if (args.verbose)
+                printf("UID=%s: logout ok\n", uid);
+            return send_udp(fd, res_efull, addr, addrlen) <= 0;
+        } else if (res.status == SUBS_EGNAME) {
+            if (args.verbose)
+                printf("UID=%s: logout ok\n", uid);
+            return send_udp(fd, res_gname, addr, addrlen) <= 0;
+        } else if (res.status == SUBS_NEW) {
+            sprintf(res_new.data, "RGS NEW %02d\n", res.gid);
+            if (args.verbose)
+                printf("UID=%s: new group: %02d - \"%s\"\n", uid, res.gid, gname);
+            return send_udp(fd, res_new, addr, addrlen) <= 0;
+        }
+    }
+
+    if (args.verbose)
+        printf("UID=%s: failed to subscribe\n", uid);
+    return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
+}
+
 bool list_groups_request(int fd, args_t args, const struct sockaddr *addr,
                     socklen_t addrlen) {
 
@@ -233,9 +300,11 @@ bool handle_udp_request(int fd, args_t args) {
         return login_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     else if (strncmp(request.data, "OUT ", 4) == 0)
         return logout_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
-    else if (strcmp(request.data, "GLS\n") == 0)
+    else if (strncmp(request.data, "GLS\n", 4) == 0)
         return list_groups_request(fd, args, (struct sockaddr *)&addr, addrlen);
-
+    else if (strncmp(request.data, "GSR ", 4) == 0)
+        return subscribe_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
+        
     return false;
 }
 
