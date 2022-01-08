@@ -227,6 +227,7 @@ bool count_groups(const char *dir_name, int *group_count) {
 }
 
 bool user_subscribe(const char *uid, const char *gid, const char *gname, subscribe_t *result) {
+    result->status = SUBS_OK;
     char user_logged_in[35];
     char group_dir[10];
     char group_msg_dir[14];
@@ -308,5 +309,35 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
     if (fclose(subscribe_file) == EOF)
         return true;
 
+    return false;
+}
+
+bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result) {
+    *result = UNS_OK;
+    char user_logged_in[35];
+    sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
+
+    struct stat st;
+    if (stat(user_logged_in, &st) != 0) {
+        *result = UNS_EUSR;
+        return errno != ENOENT;
+    }
+
+    int group_id = atoi(gid);
+    int groups_count;
+    if (count_groups("GROUPS", &groups_count))
+        return true;
+        
+    if (group_id > groups_count) {
+        *result = UNS_EGRP;
+        return false;
+    }
+
+    char user_subscribe_file[20];
+    sprintf(user_subscribe_file, "GROUPS/%s/%s.txt", gid, uid);
+    
+    if (unlink(user_subscribe_file) != 0 && errno != ENOENT)
+        return true;
+    
     return false;
 }
