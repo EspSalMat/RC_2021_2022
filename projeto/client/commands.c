@@ -81,7 +81,8 @@ bool register_user(sockets_t sockets, char *args) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 9);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strcmp(reply.data, "RRG OK\n") == 0)
         printf("User successfully registered\n");
@@ -111,13 +112,16 @@ bool unregister_user(sockets_t sockets, char *args) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 9);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
-    if (strcmp(reply.data, "RUN OK\n") == 0)
+    if (strcmp(reply.data, "RUN OK\n") == 0) {
+        logged_in = false;
+        group_selected = false;
         printf("User successfully unregistered\n");
-    else if (strcmp(reply.data, "RUN NOK\n") == 0)
+    } else if (strcmp(reply.data, "RUN NOK\n") == 0) {
         printf("User unregistration failed\n");
-    else {
+    } else {
         errno = EPROTO;
         return true;
     }
@@ -147,7 +151,8 @@ bool login(sockets_t sockets, char *args) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 9);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strcmp(reply.data, "RLO OK\n") == 0) {
         printf("You are now logged in\n");
@@ -178,12 +183,11 @@ bool logout(sockets_t sockets) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 9);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strcmp(reply.data, "ROU OK\n") == 0) {
         printf("You are now logged out\n");
-        memset(uid, 0, sizeof uid);
-        memset(pass, 0, sizeof pass);
         logged_in = false;
         group_selected = false;
     } else if (strcmp(reply.data, "ROU NOK\n") == 0) {
@@ -205,7 +209,7 @@ bool show_groups(char *reply, int n) {
         if (sscanf(cursor, "%2s%24s%4s%n", gid, name, mid, &inc) < 0)
             return true;
         cursor += inc;
-        printf("Group %s - \"%s\"\n", gid, name);
+        printf("Group %s - \"%s\" (%s messages)\n", gid, name, mid);
     }
 
     return false;
@@ -218,7 +222,8 @@ bool list_groups(sockets_t sockets) {
 
     buffer_t reply;
     create_buffer(reply, 3275);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strncmp(reply.data, "RGL ", 4) == 0) {
         int n;
@@ -256,7 +261,8 @@ bool subscribe_group(sockets_t sockets, char *args) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 13);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strcmp(reply.data, "RGS OK\n") == 0)
         printf("You are now subscribed\n");
@@ -302,7 +308,8 @@ bool unsubscribe_group(sockets_t sockets, char *args) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 11);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strcmp(reply.data, "RGU OK\n") == 0)
         printf("Group successfully unsubscribed\n");
@@ -334,7 +341,8 @@ bool list_user_groups(sockets_t sockets) {
     message.size = n;
     buffer_t reply;
     create_buffer(reply, 3275);
-    get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
 
     if (strcmp(reply.data, "RGM E_USR\n") == 0) {
         printf("Invalid user ID\n");

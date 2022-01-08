@@ -16,7 +16,7 @@
 
 #define DEFAULT_PORT "58054"
 #define MAX_MESSAGE 129
-#define MAX_RESPONSE 3276
+#define MAX_RESPONSE 3275
 
 typedef struct {
     char *port;
@@ -183,6 +183,36 @@ bool logout_request(int fd, args_t args, buffer_t request, const struct sockaddr
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
+bool list_groups_request(int fd, args_t args, const struct sockaddr *addr,
+                    socklen_t addrlen) {
+
+    // Define buffers for possible responses
+    buffer_t res;
+    create_buffer(res, 3275);
+    grouplist_t list;
+    bool error = list_groups(&list);
+    if (list.len == 0) {
+        strcpy(res.data, "RGL 0\n");
+    } else {
+        int n = sprintf(res.data, "RGL %d", list.len);
+        int offset = n;
+        for (int i = 0; i < list.len; i++) {
+            n = sprintf(res.data + offset, " %02d %s %04d", i+1, list.names[i], list.mids[i]);
+            offset += n;
+        }
+        n = sprintf(res.data + offset, "\n");
+        offset += n;
+        res.size = offset;
+    }
+    if (!error) {
+        if (args.verbose)
+            printf("listing groups\n");
+        return send_udp(fd, res, addr, addrlen) <= 0;
+    }
+
+    return true;
+}
+
 bool handle_udp_request(int fd, args_t args) {
     buffer_t request;
     create_buffer(request, 39);
@@ -203,6 +233,8 @@ bool handle_udp_request(int fd, args_t args) {
         return login_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     else if (strncmp(request.data, "OUT ", 4) == 0)
         return logout_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
+    else if (strcmp(request.data, "GLS\n") == 0)
+        return list_groups_request(fd, args, (struct sockaddr *)&addr, addrlen);
 
     return false;
 }
