@@ -161,11 +161,11 @@ bool count_messages(const char *dir_name, int *message_count) {
 }
 
 bool list_groups(grouplist_t *list) {
+    list->len = 0;
     DIR *groups_dir = opendir("GROUPS");
     if (groups_dir == NULL)
         return true;
 
-    list->len = 0;
     struct dirent *gid_dir;
 
     while ((gid_dir = readdir(groups_dir)) != NULL) {
