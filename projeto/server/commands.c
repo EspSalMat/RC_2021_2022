@@ -57,8 +57,10 @@ bool register_user(const char *uid, const char *pass, bool *duplicate) {
 bool unregister_user(const char *uid, const char *pass, bool *failed) {
     char user_dirname[20];
     char user_pass[34];
+    char user_logged_in[35];
 
     sprintf(user_dirname, "USERS/%s", uid);
+    sprintf(user_logged_in, "%s/%s_login.txt", user_dirname, uid);
     sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
 
     struct stat st;
@@ -72,7 +74,8 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
     else if (*failed)
         return false;
 
-    if (unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
+    bool logged_out = unlink(user_logged_in) == 0 || errno == ENOENT;
+    if (logged_out && unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
         return false;
 
     return true;

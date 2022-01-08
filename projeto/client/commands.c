@@ -116,8 +116,11 @@ bool unregister_user(sockets_t sockets, char *args) {
         return true;
 
     if (strcmp(reply.data, "RUN OK\n") == 0) {
-        logged_in = false;
-        group_selected = false;
+        // Log out if unregistering current logged in user
+        if (logged_in && strcmp(id, uid) == 0) {
+            logged_in = false;
+            group_selected = false;
+        }
         printf("User successfully unregistered\n");
     } else if (strcmp(reply.data, "RUN NOK\n") == 0) {
         printf("User unregistration failed\n");
