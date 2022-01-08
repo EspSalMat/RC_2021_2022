@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "../utils/validate.h"
 #include "commands.h"
 
 bool check_password(const char *user_pass, const char *pass, bool *failed) {
@@ -138,20 +139,18 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
 }
 
 bool count_messages(const char *dir_name, int *message_count) {
-    DIR *msg_dir;
-    struct dirent *mid_dir;
-    msg_dir = opendir(dir_name);
-    if (!msg_dir)
+    DIR *msg_dir = opendir(dir_name);
+    if (msg_dir == NULL)
         return true;
 
     *message_count = 0;
+    struct dirent *mid_dir;
     while ((mid_dir = readdir(msg_dir)) != NULL) {
-        if (mid_dir->d_name[0] == '.')
-            continue;
-        if (strlen(mid_dir->d_name) > 4)
+        if (!is_mid(mid_dir->d_name))
             continue;
         (*message_count)++;
     }
+
     if (closedir(msg_dir) == -1)
         return true;
 
@@ -159,33 +158,30 @@ bool count_messages(const char *dir_name, int *message_count) {
 }
 
 bool list_groups(grouplist_t *list) {
-    DIR *groups_dir;
-    groups_dir = opendir("GROUPS");
-    if (!groups_dir)
+    DIR *groups_dir = opendir("GROUPS");
+    if (groups_dir == NULL)
         return true;
 
-    struct dirent *gid_dir;
     list->len = 0;
+    struct dirent *gid_dir;
+
     while ((gid_dir = readdir(groups_dir)) != NULL) {
-        if (gid_dir->d_name[0] == '.')
-            continue;
-        if (strlen(gid_dir->d_name) > 2)
+        // Continue if it's not a group id
+        if (!is_gid(gid_dir->d_name))
             continue;
 
-        int gid;
-        if (sscanf(gid_dir->d_name, "%d", &gid) < 0)
-            return true;
-        int i = gid - 1;
+        int gid = atoi(gid_dir->d_name);
 
         char gid_name[30];
         sprintf(gid_name, "GROUPS/%s/%s_name.txt", gid_dir->d_name, gid_dir->d_name);
 
-        FILE *group_name_file;
-        group_name_file = fopen(gid_name, "r");
+        FILE *group_name_file = fopen(gid_name, "r");
         if (group_name_file == NULL)
             return true;
-        if (fscanf(group_name_file, "%24s", list->names[i]) < 0)
+
+        if (fscanf(group_name_file, "%24s", list->names[gid - 1]) < 0)
             return true;
+
         if (fclose(group_name_file) == EOF)
             return true;
 
@@ -195,7 +191,7 @@ bool list_groups(grouplist_t *list) {
         int message_count;
         if (count_messages(msg_name, &message_count))
             return true;
-        list->mids[i] = message_count;
+        list->mids[gid - 1] = message_count;
 
         list->len++;
         if (list->len == 99)
