@@ -8,6 +8,7 @@ typedef struct {
 } sockets_t;
 
 bool show_uid();
+bool logout_on_exit(sockets_t sockets);
 bool register_user(sockets_t sockets, char *args);
 bool unregister_user(sockets_t sockets, char *args);
 bool login(sockets_t sockets, char *args);

@@ -59,6 +59,31 @@ bool get_udp_reply(int fd, buffer_t message, buffer_t reply, struct addrinfo *se
     return response <= 0;
 }
 
+bool logout_on_exit(sockets_t sockets) {
+    if (!logged_in) {
+        return true;
+    }
+
+    buffer_t message;
+    create_buffer(message, 20);
+    int n = sprintf(message.data, "OUT %s %s\n", uid, pass);
+    if (n < 0)
+        return true;
+
+    message.size = n;
+    buffer_t reply;
+    create_buffer(reply, 9);
+    if (get_udp_reply(sockets.udp_fd, message, reply, sockets.udp_addr))
+        return true;
+
+    if (strcmp(reply.data, "ROU OK\n") != 0 && strcmp(reply.data, "ROU NOK\n") != 0) {
+        errno = EPROTO;
+        return true;
+    }
+
+    return true;
+}
+
 bool show_uid() {
     if (!logged_in)
         printf("You are not logged in\n");

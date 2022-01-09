@@ -51,7 +51,7 @@ bool process_command(sockets_t sockets) {
     sscanf(raw_input, "%11s%n", command, &command_length);
 
     if (strcmp(command, "exit") == 0)
-        return true;
+        return logout_on_exit(sockets);
     else if (strcmp(command, "su") == 0 || strcmp(command, "showuid") == 0)
         return show_uid();
     else if (strcmp(command, "reg") == 0)
