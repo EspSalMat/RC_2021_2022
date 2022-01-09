@@ -32,7 +32,7 @@ bool is_group_name(const char *str) {
             return false;
     }
 
-    return i < 24;
+    return i <= 24;
 }
 
 bool is_gid(const char *str) {
@@ -46,7 +46,7 @@ bool is_gid(const char *str) {
     return i == 2;
 }
 
-bool is_mid(char *str) { 
+bool is_mid(const char *str) { 
     int i = 0;
 
     for (i = 0; str[i] != '\0'; i++) {
@@ -55,4 +55,15 @@ bool is_mid(char *str) {
     }
 
     return i == 4;
+}
+
+bool is_file_name(const char *str) { 
+    int i = 0;
+
+    for (i = 0; str[i] != '\0'; i++) {
+        if (!(isalnum(str[i]) || str[i] == '-' || str[i] == '_' || str[i] == '.'))
+            return false;
+    }
+
+    return i <= 24;
 }

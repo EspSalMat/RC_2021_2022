@@ -203,16 +203,27 @@ bool logout(sockets_t sockets) {
     return false;
 }
 
-bool show_groups(char *reply, int n) {
-    int offset = 6;
+bool show_groups(char *reply, int n, int offset) {
     char *cursor = reply + offset;
-    for (size_t i = 0; i < n; i++) {
+    int showed_groups = 0;
+    while (showed_groups < n && cursor[0] != '\n') { 
         char gid[3], name[25], mid[5];
         int inc;
-        if (sscanf(cursor, "%2s%24s%4s%n", gid, name, mid, &inc) < 0)
+        if (sscanf(cursor, " %2s%24s%4s%n", gid, name, mid, &inc) < 0)
             return true;
+        int name_size = strlen(name);
+        if (cursor[0] != ' ' || cursor[3] != ' ' || cursor[4 + name_size] != ' ') {
+            errno = EPROTO;
+            return true;
+        }
         cursor += inc;
         printf("Group %s - \"%s\" (%s messages)\n", gid, name, mid);
+        showed_groups++;
+    }
+
+    if (showed_groups != n || cursor[0] != '\n') {
+        errno = EPROTO;
+        return true;
     }
 
     return false;
@@ -230,12 +241,20 @@ bool list_groups(sockets_t sockets) {
 
     if (strncmp(reply.data, "RGL ", 4) == 0) {
         int n;
-        if (sscanf(reply.data + 4, "%2d\n", &n) < 0)
+        int read_chars = 0;
+        if (sscanf(reply.data + 4, "%2d%n", &n, &read_chars) < 0)
             return true;
-        if (n == 0)
-            printf("No groups to list\n");
-        else
-            return show_groups(reply.data, n);
+
+        if (read_chars <= 2 && ((n != 0 && reply.data[4+read_chars] == ' ') ||
+            (n == 0 && reply.data[4+read_chars] == '\n'))) {
+            if (n == 0)
+                printf("No groups to list\n");
+            else
+                return show_groups(reply.data, n, 4 + read_chars);
+        } else {
+            errno = EPROTO;
+            return true;
+        }
     } else {
         errno = EPROTO;
         return true;
@@ -282,7 +301,7 @@ bool subscribe_group(sockets_t sockets, char *args) {
     else if (strncmp(reply.data, "RGS NEW ", 8) == 0) {
         int new_gid;
         if (sscanf(reply.data + 8, "%2d\n", &new_gid) < 0)
-            return false;
+            return true;
         printf("New group created and subscribed: %02d - \"%s\"\n", new_gid, name);
     } else {
         errno = EPROTO;
@@ -351,12 +370,20 @@ bool list_user_groups(sockets_t sockets) {
         printf("Invalid user ID\n");
     } else if (strncmp(reply.data, "RGM ", 4) == 0) {
         int n;
-        if (sscanf(reply.data + 4, "%2d\n", &n) < 0)
+        int read_chars = 0;
+        if (sscanf(reply.data + 4, "%2d%n", &n, &read_chars) < 0)
             return true;
-        if (n == 0)
-            printf("No groups subscribed\n");
-        else
-            return show_groups(reply.data, n);
+
+        if ((n != 0 && reply.data[4+read_chars] == ' ') ||
+            (n == 0 && reply.data[4+read_chars] == '\n')) {
+            if (n == 0)
+                printf("No groups to list\n");
+            else
+                return show_groups(reply.data, n, 4 + read_chars);
+        } else {
+            errno = EPROTO;
+            return true;
+        }
     } else {
         errno = EPROTO;
         return true;
@@ -401,25 +428,22 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
     if (sscanf(buffer.data + offset, "%24s%n", group_name, &offset_inc) < 0)
         return true;
 
-    offset += offset_inc;
+    printf("%s\n", group_name);
 
+    offset += offset_inc;
     if (buffer.data[offset] == '\n') {
         printf("%s has no subscribers\n", group_name);
         return false;
+    } else if (buffer.data[offset] != ' ') {
+        errno = EPROTO;
+        return true;
     }
+    offset += 1;
 
-    printf("%s\n", group_name);
-
+    bool followed_by_space;
     while (buffer.data[offset] != '\n') {
-        // Check if all of the buffer has been read
-        if (offset == bytes_read || offset == bytes_read - 1) {
-            bytes_read = receive_tcp(fd, buffer);
-            if (bytes_read < 0)
-                return true;
-            offset = 0;
-        }
-
-        if (sscanf(buffer.data + offset, " %5s%n", user_id, &offset_inc) < 0)
+        followed_by_space = false;
+        if (sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc) < 0)
             return true;
 
         // Check if the buffer ended with an incomplete user id
@@ -427,10 +451,35 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
             bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
             if (bytes_read < 0)
                 return true;
+            bytes_read += offset_inc;
             offset = 0;
         } else {
+            if (!is_uid(user_id)) {
+                errno = EPROTO;
+                return true;
+            }
             offset += offset_inc;
+            followed_by_space = true;
             printf("%s\n", user_id);
+        }
+
+        if (followed_by_space) {
+            if (buffer.data[offset] == '\n') {
+                break;
+            } else if (buffer.data[offset] != ' ') {
+                errno = EPROTO;
+                return true;
+            }
+            followed_by_space = false;
+            offset += 1;
+        }
+
+        // Check if all of the buffer has been read
+        if (offset == bytes_read) {
+            bytes_read = receive_tcp(fd, buffer);
+            if (bytes_read < 0)
+                return true;
+            offset = 0;
         }
     }
 
@@ -456,9 +505,10 @@ bool list_group_users(sockets_t sockets) {
     buffer_t message;
     create_buffer(message, 8);
     int n = sprintf(message.data, "ULS %s\n", active_group);
-    if (n < 0)
+    if (n < 0) {
+        close(fd);
         return true;
-
+    }
     message.size = n;
     if (send_tcp(fd, message)) {
         close(fd);
@@ -516,8 +566,10 @@ bool post(sockets_t sockets, char *args) {
         create_buffer(buffer, 158);
 
         int n = sprintf(buffer.data, "PST %s %s %d %s", uid, active_group, text_size, text);
-        if (n < 0)
+        if (n < 0) {
+            close(fd);
             return true;
+        }
 
         buffer_t message;
         message.data = buffer.data;
@@ -530,18 +582,23 @@ bool post(sockets_t sockets, char *args) {
 
         if (args_count == 2) {
             struct stat st;
-            if (stat(name, &st) != 0)
-                return true;
+            if (stat(name, &st) != 0) {
+            close(fd);
+            return true;
+        }
             size_t file_size = st.st_size;
-            
+
             if (file_size >= 10000000000) {
+                close(fd);
                 printf("File is too large.\n");
                 return false;
             }
-                
+
             int n = sprintf(buffer.data, " %s %ld ", name, file_size);
-            if (n < 0)
+            if (n < 0){
+                close(fd);
                 return true;
+            }
             message.size = n;
 
             if (send_tcp(fd, message)) {
@@ -572,14 +629,12 @@ bool post(sockets_t sockets, char *args) {
 
         } else if (strncmp(buffer.data, "RPT ", 4) == 0) {
             char status[5];
-
-            if (sscanf(buffer.data + 4, "%4s\n", status) < 0)
+            int read_chars = 0;
+            if (sscanf(buffer.data + 4, "%4s\n%n", status, &read_chars) < 0)
                 return true;
-
-            if (is_mid(status))
+            if (read_chars == 5 && is_mid(status) && buffer.data[8] == '\n')
                 printf("Posted message number %s to group %s - \"(group_name)\"\n", status,
                        active_group);
-
             else {
                 errno = EPROTO;
                 return true;
@@ -594,27 +649,35 @@ bool post(sockets_t sockets, char *args) {
 }
 
 bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_count) {
-    char mid[5], user_id[6], text[241], slash[2], file_name[25];
-    int offset = 9, offset_inc, text_size, messages_read = 0;
+    char mid[5], user_id[6], text[241], file_name[25];
+    int offset = 9, offset_inc, text_size, messages_read = 0, args_count;
     size_t file_size;
     FILE *file;
 
     printf("%d message(s) retrieved:\n", message_count);
 
     enum { MID, UID, TSIZE, TEXT, FILE_CHECK, FNAME, FSIZE, FDATA } current_state;
+    current_state = MID;
 
-    while (buffer.data[offset] != '\n') {
+    while (buffer.data[offset] != '\n' && messages_read < message_count) {
+        bool followed_by_space = false;
         switch (current_state) {
         case MID:
             if (sscanf(buffer.data + offset, "%4s%n", mid, &offset_inc) < 0)
                 return true;
-            if (offset + offset_inc >= bytes_read) {
+            if (offset + offset_inc == bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
                     return true;
+                bytes_read += offset_inc;
                 offset = 0;
             } else {
+                if (!is_mid(mid)) {
+                    errno = EPROTO;
+                    return true;
+                }
                 current_state = UID;
+                followed_by_space = true;
                 offset += offset_inc;
             }
             break;
@@ -622,28 +685,41 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
         case UID:
             if (sscanf(buffer.data + offset, "%5s%n", user_id, &offset_inc) < 0)
                 return true;
-            if (offset + offset_inc >= bytes_read) {
+            if (offset + offset_inc == bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
                     return true;
+                bytes_read += offset_inc;
                 offset = 0;
             } else {
+                if (!is_uid(user_id)) {
+                    errno = EPROTO;
+                    return true;
+                }
                 current_state = TSIZE;
+                followed_by_space = true;
                 offset += offset_inc;
             }
             break;
 
         case TSIZE:
-            if (sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc) < 0)
+            args_count = sscanf(buffer.data + offset, "%3d%n", &text_size, &offset_inc);
+            if (args_count < 0)
                 return true;
-            if (offset + offset_inc >= bytes_read) {
+            if (offset + offset_inc == bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
                     return true;
+                bytes_read += offset_inc;
                 offset = 0;
             } else {
+                if (args_count == 0 || text_size > 240) {
+                    errno = EPROTO;
+                    return true;
+                }
                 current_state = TEXT;
-                offset += offset_inc + 1;
+                followed_by_space = true;
+                offset += offset_inc;
             }
             break;
 
@@ -652,7 +728,7 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
             char *cursor = text;
 
             while (text_size > 0) {
-                size_t bytes = buffer.size - offset - 1;
+                size_t bytes = bytes_read - offset;
                 if (text_size < bytes)
                     bytes = text_size;
 
@@ -663,7 +739,7 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                 text_size -= bytes;
                 offset += bytes;
 
-                if (offset >= bytes_read) {
+                if (offset == bytes_read) {
                     bytes_read = receive_tcp(fd, buffer);
                     if (bytes_read < 0)
                         return true;
@@ -674,20 +750,29 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
             if (messages_read == message_count - 1 && buffer.data[offset] == '\n') {
                 messages_read++;
                 printf("\n");
+                return false;
             }
             current_state = FILE_CHECK;
+            followed_by_space = true;
             break;
 
         case FILE_CHECK:
-            if (sscanf(buffer.data + offset, "%1s%n", slash, &offset_inc) < 0)
-                return true;
-
-            if (slash[0] == '/') {
-                current_state = FNAME;
-                offset += offset_inc;
+            if (buffer.data[offset] == '/') {
+                if (offset + 1 == bytes_read) {
+                    bytes_read = shift_buffer(fd, buffer, offset, 1);
+                    if (bytes_read < 0)
+                        return true;
+                    bytes_read++;
+                    offset = 0;
+                } else {
+                    current_state = FNAME;
+                    followed_by_space = true;
+                    offset++;
+                }
             } else {
                 printf("\n");
                 current_state = MID;
+                followed_by_space = false;
                 messages_read++;
             }
             break;
@@ -695,28 +780,41 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
         case FNAME:
             if (sscanf(buffer.data + offset, "%24s%n", file_name, &offset_inc) < 0)
                 return true;
-            if (offset + offset_inc >= bytes_read) {
+            if (offset + offset_inc == bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
                     return true;
+                bytes_read += offset_inc;
                 offset = 0;
             } else {
+                if (!is_file_name(file_name)) {
+                    errno = EPROTO;
+                    return true;
+                }
                 current_state = FSIZE;
+                followed_by_space = true;
                 offset += offset_inc;
             }
             break;
 
         case FSIZE:
-            if (sscanf(buffer.data + offset, "%10lu%n", &file_size, &offset_inc) < 0)
+            args_count = sscanf(buffer.data + offset, "%10lu%n", &file_size, &offset_inc);
+            if (args_count < 0)
                 return true;
-            if (offset + offset_inc >= bytes_read) {
+            if (offset + offset_inc == bytes_read) {
                 bytes_read = shift_buffer(fd, buffer, offset, offset_inc);
                 if (bytes_read < 0)
                     return true;
+                bytes_read += offset_inc;
                 offset = 0;
             } else {
+                if (args_count == 0) {
+                    errno = EPROTO;
+                    return true;
+                }
                 current_state = FDATA;
-                offset += offset_inc + 1;
+                followed_by_space = true;
+                offset += offset_inc;
             }
             break;
 
@@ -727,7 +825,7 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
 
             // Write file
             while (file_size > 0) {
-                size_t bytes = buffer.size - offset - 1;
+                size_t bytes = bytes_read - offset;
                 if (file_size < bytes)
                     bytes = file_size;
                 ssize_t bytes_written = fwrite(buffer.data + offset, 1, bytes, file);
@@ -736,7 +834,7 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                 file_size -= bytes_written;
                 offset += bytes_written;
 
-                if (offset >= bytes_read) {
+                if (offset == bytes_read) {
                     bytes_read = receive_tcp(fd, buffer);
                     if (bytes_read < 0) {
                         fclose(file);
@@ -745,12 +843,13 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                     offset = 0;
                 }
             }
-            
+
             printf(" file stored: %s\n", file_name);
             if (fclose(file) == EOF)
                 return true;
 
             current_state = MID;
+            followed_by_space = true;
             messages_read++;
             break;
 
@@ -758,15 +857,24 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
             break;
         }
 
-        if (offset >= bytes_read - 1 &&
-            buffer.data[offset] != '\n') {
+        if (buffer.data[offset] == '\n')
+            break;
+
+        if (followed_by_space) {
+            if (buffer.data[offset] != ' ') {
+                errno = EPROTO;
+                return true;
+            }
+            offset += 1;
+        }
+        if (offset == bytes_read) {
             bytes_read = receive_tcp(fd, buffer);
             if (bytes_read < 0)
                 return true;
             offset = 0;
         }
     }
-    if (messages_read != message_count) {
+    if (messages_read != message_count || buffer.data[offset] != '\n') {
         errno = EPROTO;
         return true;
     }
@@ -787,14 +895,18 @@ bool retrieve(sockets_t sockets, char *args) {
         return true;
 
     buffer_t buffer;
-    create_buffer(buffer, 1025);
+    create_buffer(buffer, 1025); // min 25
 
     int mid;
-    if (sscanf(args, "%4d", &mid) < 0)
+    if (sscanf(args, "%4d", &mid) < 0){
+        close(fd);
         return true;
+    }
     int n = sprintf(buffer.data, "RTV %s %s %04d\n", uid, active_group, mid);
-    if (n < 0)
+    if (n < 0) {
+        close(fd);
         return true;
+    }
 
     buffer_t message;
     message.data = buffer.data;
@@ -813,8 +925,10 @@ bool retrieve(sockets_t sockets, char *args) {
 
     if (strncmp(buffer.data, "RRT OK ", 7) == 0) {
         int message_count;
-        if (sscanf(buffer.data + 7, "%2d", &message_count) < 0)
+        if (sscanf(buffer.data + 7, "%2d", &message_count) < 0) {
+            close(fd);
             return true;
+        }
 
         if (retrieve_messages(fd, buffer, bytes_read, message_count)) {
             close(fd);
