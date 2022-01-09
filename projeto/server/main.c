@@ -251,7 +251,7 @@ bool subscribe_request(int fd, args_t args, buffer_t request, const struct socka
 }
 
 bool unsubscribe_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
-                       socklen_t addrlen) {
+                         socklen_t addrlen) {
     char uid[6] = {0};
     char gid[3] = {0};
 
@@ -334,7 +334,77 @@ bool list_groups_request(int fd, args_t args, const struct sockaddr *addr, sockl
 
     if (!error) {
         if (args.verbose)
-            printf("listing groups\n");
+            printf("listed groups\n");
+        return send_udp(fd, res, addr, addrlen) <= 0;
+    }
+
+    return true;
+}
+
+bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
+                             socklen_t addrlen) {
+    char uid[6] = {0};
+
+    // REG 95568 password\n
+    int args_count = sscanf(request.data + 4, "%5s", uid);
+    if (args_count < 0)
+        return true;
+
+    // Define buffers for possible responses
+    buffer_t res_empty = {.data = "RGM 0\n", .size = 6};
+    buffer_t res_eusr = {.data = "RGM E_USR\n", .size = 10};
+    buffer_t res;
+    create_buffer(res, 3275);
+
+    bool valid_uid = request.data[9] == '\n' && is_uid(uid);
+    if (args_count < 1 || !valid_uid) {
+        return send_udp(fd, res_eusr, addr, addrlen) <= 0;
+    }
+
+    subscribedgroups_t list;
+    for (size_t i = 0; i < 99; i++) {
+        list.subscribed[i] = false;
+    }
+    
+    bool failed = false;
+    bool error = subscribed_groups(uid, &list, &failed);
+
+    if (failed) {
+        return send_udp(fd, res_eusr, addr, addrlen) <= 0;
+    } else if (list.len == 0) {
+        return send_udp(fd, res_empty, addr, addrlen) <= 0;
+    }
+
+    int n = sprintf(res.data, "RGM %d", list.len);
+    if (n < 0)
+        return true;
+
+    int offset = n;
+
+    int i = 0;
+    int gid = 0;
+    while (i < list.len) {
+        gid++;
+        if (!list.subscribed[gid-1])
+            continue;
+        n = sprintf(res.data + offset, " %02d %s %04d", gid, list.names[gid-1], list.mids[gid-1]);
+        if (n < 0)
+            return true;
+
+        offset += n;
+        i++;
+    }
+
+    n = sprintf(res.data + offset, "\n");
+    if (n < 0)
+        return true;
+
+    offset += n;
+    res.size = offset;
+
+    if (!error) {
+        if (args.verbose)
+            printf("UID=%s: listed subscribed groups\n", uid);
         return send_udp(fd, res, addr, addrlen) <= 0;
     }
 
@@ -367,7 +437,8 @@ bool handle_udp_request(int fd, args_t args) {
         return subscribe_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     else if (strncmp(request.data, "GUR ", 4) == 0)
         return unsubscribe_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
-
+    else if (strncmp(request.data, "GLM ", 4) == 0)
+        return list_subscribed_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     return false;
 }
 

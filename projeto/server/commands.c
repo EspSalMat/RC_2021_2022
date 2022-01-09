@@ -54,6 +54,26 @@ bool register_user(const char *uid, const char *pass, bool *duplicate) {
     return false;
 }
 
+bool unsubscribe_all(const char *uid, const char *dir_name) {
+    DIR *groups_dir = opendir(dir_name);
+    if (groups_dir == NULL)
+        return true;
+
+    struct dirent *gid_dir;
+    while ((gid_dir = readdir(groups_dir)) != NULL) {
+        if (!is_gid(gid_dir->d_name))
+            continue;
+        unsubscribe_t result;
+        if (user_unsubscribe(uid, gid_dir->d_name, &result))
+            return true;
+    }
+
+    if (closedir(groups_dir) == -1)
+        return true;
+
+    return false;
+}
+
 bool unregister_user(const char *uid, const char *pass, bool *failed) {
     char user_dirname[20];
     char user_pass[34];
@@ -73,11 +93,14 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
         return true;
     else if (*failed)
         return false;
-
+    
+    if (unsubscribe_all(uid, "GROUPS"))
+        return true;
+    
     bool logged_out = unlink(user_logged_in) == 0 || errno == ENOENT;
     if (logged_out && unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
         return false;
-
+    
     return true;
 }
 
@@ -339,5 +362,72 @@ bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result) {
     if (unlink(user_subscribe_file) != 0 && errno != ENOENT)
         return true;
     
+    return false;
+}
+
+bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) {
+    list->len = 0;
+    char user_logged_in[35];
+    sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
+
+    struct stat st;
+    if (stat(user_logged_in, &st) != 0) {
+        *failed = true;
+        return errno != ENOENT;
+    }
+
+    DIR *groups_dir = opendir("GROUPS");
+    if (groups_dir == NULL)
+        return true;
+
+    struct dirent *gid_dir;
+
+    while ((gid_dir = readdir(groups_dir)) != NULL) {
+        // Continue if it's not a group id
+        if (!is_gid(gid_dir->d_name))
+            continue;
+
+        int gid = atoi(gid_dir->d_name);
+
+        char user_subscribe_file[20];
+        sprintf(user_subscribe_file, "GROUPS/%s/%s.txt", gid_dir->d_name, uid);
+
+        struct stat st;
+        bool is_subscribed = stat(user_subscribe_file, &st) == 0;
+        if (!is_subscribed && errno != ENOENT)
+            return true;
+        else if (!is_subscribed)
+            continue;
+        
+        char gid_name[30];
+        sprintf(gid_name, "GROUPS/%s/%s_name.txt", gid_dir->d_name, gid_dir->d_name);
+
+        FILE *group_name_file = fopen(gid_name, "r");
+        if (group_name_file == NULL)
+            return true;
+
+        if (fscanf(group_name_file, "%24s", list->names[gid - 1]) < 0)
+            return true;
+
+        if (fclose(group_name_file) == EOF)
+            return true;
+
+        char msg_name[16];
+        sprintf(msg_name, "GROUPS/%s/MSG", gid_dir->d_name);
+
+        int message_count;
+        if (count_messages(msg_name, &message_count))
+            return true;
+        
+        list->mids[gid - 1] = message_count;
+        list->subscribed[gid - 1] = true;
+        list->len++;
+        if (list->len == 99)
+            break;
+    }
+
+    if (closedir(groups_dir) == -1)
+        return true;
+
     return false;
 }
