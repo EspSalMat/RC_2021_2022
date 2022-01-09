@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "../utils/sockets.h"
 #include "../utils/validate.h"
@@ -206,13 +207,14 @@ bool logout(sockets_t sockets) {
 bool show_groups(char *reply, int n, int offset) {
     char *cursor = reply + offset;
     int showed_groups = 0;
-    while (showed_groups < n && cursor[0] != '\n') { 
+    while (showed_groups < n && cursor[0] != '\n') {
         char gid[3], name[25], mid[5];
         int inc;
         if (sscanf(cursor, " %2s%24s%4s%n", gid, name, mid, &inc) < 0)
             return true;
         int name_size = strlen(name);
-        if (cursor[0] != ' ' || cursor[3] != ' ' || cursor[4 + name_size] != ' ') {
+        if (!is_gid(gid) || !is_group_name(name) || !is_mid(mid) || cursor[0] != ' ' ||
+            cursor[3] != ' ' || cursor[4 + name_size] != ' ') {
             errno = EPROTO;
             return true;
         }
@@ -245,8 +247,8 @@ bool list_groups(sockets_t sockets) {
         if (sscanf(reply.data + 4, "%2d%n", &n, &read_chars) < 0)
             return true;
 
-        if (read_chars <= 2 && ((n != 0 && reply.data[4+read_chars] == ' ') ||
-            (n == 0 && reply.data[4+read_chars] == '\n'))) {
+        if (read_chars <= 2 && ((n != 0 && reply.data[4 + read_chars] == ' ') ||
+                                (n == 0 && reply.data[4 + read_chars] == '\n'))) {
             if (n == 0)
                 printf("No groups to list\n");
             else
@@ -374,8 +376,8 @@ bool list_user_groups(sockets_t sockets) {
         if (sscanf(reply.data + 4, "%2d%n", &n, &read_chars) < 0)
             return true;
 
-        if ((n != 0 && reply.data[4+read_chars] == ' ') ||
-            (n == 0 && reply.data[4+read_chars] == '\n')) {
+        if ((n != 0 && reply.data[4 + read_chars] == ' ') ||
+            (n == 0 && reply.data[4 + read_chars] == '\n')) {
             if (n == 0)
                 printf("No groups to list\n");
             else
@@ -583,9 +585,9 @@ bool post(sockets_t sockets, char *args) {
         if (args_count == 2) {
             struct stat st;
             if (stat(name, &st) != 0) {
-            close(fd);
-            return true;
-        }
+                close(fd);
+                return true;
+            }
             size_t file_size = st.st_size;
 
             if (file_size >= 10000000000) {
@@ -595,7 +597,7 @@ bool post(sockets_t sockets, char *args) {
             }
 
             int n = sprintf(buffer.data, " %s %ld ", name, file_size);
-            if (n < 0){
+            if (n < 0) {
                 close(fd);
                 return true;
             }
@@ -898,7 +900,7 @@ bool retrieve(sockets_t sockets, char *args) {
     create_buffer(buffer, 1025); // min 25
 
     int mid;
-    if (sscanf(args, "%4d", &mid) < 0){
+    if (sscanf(args, "%4d", &mid) < 0) {
         close(fd);
         return true;
     }

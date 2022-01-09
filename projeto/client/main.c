@@ -116,12 +116,15 @@ int main(int argc, char **argv) {
         should_exit = process_command(sockets);
     }
 
-    if (errno != 0)
+    int exit_code = EXIT_SUCCESS;
+    if (errno != 0) {
         perror("Error");
+        exit_code = EXIT_FAILURE;
+    }
 
     freeaddrinfo(sockets.udp_addr);
     freeaddrinfo(sockets.tcp_addr);
     close(sockets.udp_fd);
 
-    return 0;
+    return exit_code;
 }
