@@ -23,6 +23,6 @@ ssize_t receive_udp(int fd, buffer_t buffer, struct sockaddr_in *addr, socklen_t
 // TCP functions
 bool send_tcp(int fd, buffer_t buffer);
 bool send_file_tcp(int fd, char *filename, size_t size);
-ssize_t receive_tcp(int server_fd, buffer_t buffer);
+ssize_t receive_tcp(int fd, buffer_t buffer);
 
 #endif /* UTILS_SOCKETS_H */
