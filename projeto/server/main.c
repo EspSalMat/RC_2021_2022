@@ -85,16 +85,16 @@ bool handle_tcp_request(int fd, args_t args) {
     create_buffer(prefix, 5);
 
     // Read the request's prefix
-    if (receive_tcp(client_fd, prefix) <= 0) {
+    ssize_t bytes_read = read_tcp(client_fd, prefix);
+    if (bytes_read <= 0) {
         close(client_fd);
         return true;
     }
 
     bool error = false;
-    printf("%s\n", prefix.data);
     
     if (strncmp(prefix.data, "ULS ", 4) == 0)
-        error = send_tcp(client_fd, res_err);
+        error = subscribed_users(fd, args);
     else if (strncmp(prefix.data, "PST ", 4) == 0)
         error = send_tcp(client_fd, res_err);
     else if (strncmp(prefix.data, "RTV ", 4) == 0)
@@ -173,13 +173,11 @@ int main(int argc, char **argv) {
             exit(EXIT_FAILURE);
 
         if (FD_ISSET(udp_fd, &ready_sockets)) {
-            printf("udp fd set\n");
             if (handle_udp_request(udp_fd, args))
                 should_exit = true;
         }
 
         if (FD_ISSET(tcp_fd, &ready_sockets)) {
-            printf("tcp fd set\n");
             if (handle_tcp_request(tcp_fd, args))
                 should_exit = true;
         }
