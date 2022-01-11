@@ -85,7 +85,7 @@ bool handle_tcp_request(int fd, args_t args) {
     create_buffer(prefix, 5);
 
     // Read the request's prefix
-    ssize_t bytes_read = read_tcp(client_fd, prefix);
+    ssize_t bytes_read = receive_tcp(client_fd, prefix);
     if (bytes_read <= 0) {
         close(client_fd);
         return true;
@@ -94,7 +94,7 @@ bool handle_tcp_request(int fd, args_t args) {
     bool error = false;
     
     if (strncmp(prefix.data, "ULS ", 4) == 0)
-        error = subscribed_users(fd, args);
+        error = subscribed_users(client_fd, args);
     else if (strncmp(prefix.data, "PST ", 4) == 0)
         error = send_tcp(client_fd, res_err);
     else if (strncmp(prefix.data, "RTV ", 4) == 0)

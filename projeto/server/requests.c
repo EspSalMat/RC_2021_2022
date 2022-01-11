@@ -383,14 +383,15 @@ bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct
 bool subscribed_users(int fd, args_t args) {
     buffer_t request;
     create_buffer(request, 4);
-    read_tcp(fd, request);
-
+    if (receive_tcp(fd, request) <= 0)
+        return true;
+    
     char gid[3] = {0};
     sscanf(request.data, "%2s", gid);
 
     buffer_t res_nok = {.data = "RUL NOK\n", .size = 8};
     if (!is_gid(gid) || request.data[2] != '\n')
-        return send_tcp(fd, res_nok) <= 0;
+        return send_tcp(fd, res_nok);
 
     char group_dir[10];
     sprintf(group_dir, "GROUPS/%s", gid);
@@ -402,18 +403,19 @@ bool subscribed_users(int fd, args_t args) {
 
     FILE *gname_file = fopen(group_name_file, "r");
     if (gname_file == NULL)
-        return send_tcp(fd, res_nok) <= 0;
+        return send_tcp(fd, res_nok);
 
     if (fscanf(gname_file, "%24s", group_name) < 0)
-        return send_tcp(fd, res_nok) <= 0;
+        return send_tcp(fd, res_nok);
     
     if (fclose(gname_file) == EOF)
-        return send_tcp(fd, res_nok) <= 0;
+        return send_tcp(fd, res_nok);
 
     buffer_t res = {.data = "RUL OK ", .size = 7};
     send_tcp(fd, res);
     res.data = group_name;
     res.size = strlen(group_name);
+    send_tcp(fd, res);
 
     DIR *dir = opendir(group_dir);
     if (dir == NULL)
