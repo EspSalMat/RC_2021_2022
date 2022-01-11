@@ -242,7 +242,7 @@ bool unsubscribe_request(int fd, args_t args, buffer_t request, const struct soc
     }
 
     unsubscribe_t res;
-    bool error = user_unsubscribe(uid, gid, &res);
+    bool error = user_unsubscribe(uid, gid, &res, false);
 
     if (!error) {
         if (res == UNS_OK) {
