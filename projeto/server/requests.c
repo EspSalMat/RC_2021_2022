@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../utils/sockets.h"
@@ -385,7 +386,7 @@ bool subscribed_users(int fd, args_t args) {
     create_buffer(request, 4);
     if (receive_tcp(fd, request) <= 0)
         return true;
-    
+
     char gid[3] = {0};
     sscanf(request.data, "%2s", gid);
 
@@ -393,54 +394,70 @@ bool subscribed_users(int fd, args_t args) {
     if (!is_gid(gid) || request.data[2] != '\n')
         return send_tcp(fd, res_nok);
 
-    char group_dir[10];
-    sprintf(group_dir, "GROUPS/%s", gid);
+    int group_count;
+    if (count_groups("GROUPS", &group_count))
+        return send_tcp(fd, res_nok) || true;
 
+    int gid_num = atoi(gid);
+    if (gid_num == 0 || gid_num > group_count)
+        return send_tcp(fd, res_nok);
+
+    char group_dir[10];
     char group_name_file[30];
+    sprintf(group_dir, "GROUPS/%s", gid);
     sprintf(group_name_file, "%s/%s_name.txt", group_dir, gid);
 
     char group_name[25];
 
     FILE *gname_file = fopen(group_name_file, "r");
-    if (gname_file == NULL)
-        return send_tcp(fd, res_nok);
+    if (gname_file == NULL) {
+        send_tcp(fd, res_nok);
+        return true;
+    }
 
-    if (fscanf(gname_file, "%24s", group_name) < 0)
-        return send_tcp(fd, res_nok);
-    
-    if (fclose(gname_file) == EOF)
-        return send_tcp(fd, res_nok);
+    if (fscanf(gname_file, "%24s", group_name) < 0) {
+        send_tcp(fd, res_nok);
+        return true;
+    }
 
-    buffer_t res = {.data = "RUL OK ", .size = 7};
-    send_tcp(fd, res);
-    res.data = group_name;
-    res.size = strlen(group_name);
-    send_tcp(fd, res);
+    if (fclose(gname_file) == EOF) {
+        send_tcp(fd, res_nok);
+        return true;
+    }
 
     DIR *dir = opendir(group_dir);
-    if (dir == NULL)
+    if (dir == NULL) {
+        send_tcp(fd, res_nok);
+        return true;
+    }
+
+    buffer_t res = {.data = "RUL OK ", .size = 7};
+    if (send_tcp(fd, res))
+        return true;
+    res.data = group_name;
+    res.size = strlen(group_name);
+    if (send_tcp(fd, res))
         return true;
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        char uid[6];
-        if (sscanf(entry->d_name, "%5s", uid) <= 0)
+        char uid[7];
+        uid[0] = ' ';
+        if (sscanf(entry->d_name, "%5s", uid + 1) <= 0)
             return true;
-        if (!is_uid(uid))
+        if (!is_uid(uid + 1))
             continue;
-        
-        res.data = " ";
-        res.size = 1;
-        send_tcp(fd, res);
 
         res.data = uid;
-        res.size = 5;
-        send_tcp(fd, res);
+        res.size = 6;
+        if (send_tcp(fd, res))
+            return true;
     }
 
     res.data = "\n";
     res.size = 1;
-    send_tcp(fd, res);
+    if (send_tcp(fd, res))
+        return true;
 
     if (closedir(dir) == -1)
         return true;

@@ -32,4 +32,6 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed);
 bool user_subscribe(const char *uid, const char *gid, const char *gname, subscribe_t *result);
 bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result, bool unr);
 
+bool count_groups(const char *dir_name, int *group_count);
+
 #endif

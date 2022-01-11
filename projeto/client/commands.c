@@ -455,8 +455,6 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
     if (sscanf(buffer.data + offset, "%24s%n", group_name, &offset_inc) < 0)
         return true;
 
-    printf("%s\n", group_name);
-
     offset += offset_inc;
     if (buffer.data[offset] == '\n') {
         printf("%s has no subscribers\n", group_name);
@@ -466,6 +464,8 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
         return true;
     }
     offset += 1;
+
+    printf("%s\n", group_name);
 
     bool followed_by_space;
     while (buffer.data[offset] != '\n') {
@@ -514,10 +514,6 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
 }
 
 bool list_group_users(sockets_t sockets) {
-    // if (!logged_in) {
-    //     printf("You are not logged in\n");
-    //     return false;
-    // } else 
     if (!group_selected) {
         printf("You don't have a group selected\n");
         return false;
