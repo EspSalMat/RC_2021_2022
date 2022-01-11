@@ -26,5 +26,6 @@ bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct
 
 // TCP Requests
 bool subscribed_users(int fd, args_t args);
+bool post_request(int fd, args_t args);
 
 #endif /* REQUESTS_H */

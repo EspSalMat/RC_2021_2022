@@ -382,21 +382,23 @@ bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct
 }
 
 bool subscribed_users(int fd, args_t args) {
+    buffer_t res_nok = {.data = "RUL NOK\n", .size = 8};
     buffer_t request;
     create_buffer(request, 4);
     if (receive_tcp(fd, request) <= 0)
         return true;
 
     char gid[3] = {0};
-    sscanf(request.data, "%2s", gid);
+    int args_count = sscanf(request.data, "%2s", gid);
+    if (args_count < 0)
+        return true;
 
-    buffer_t res_nok = {.data = "RUL NOK\n", .size = 8};
     if (!is_gid(gid) || request.data[2] != '\n')
         return send_tcp(fd, res_nok);
 
     int group_count;
     if (count_groups("GROUPS", &group_count))
-        return send_tcp(fd, res_nok) || true;
+        return true;
 
     int gid_num = atoi(gid);
     if (gid_num == 0 || gid_num > group_count)
@@ -410,26 +412,18 @@ bool subscribed_users(int fd, args_t args) {
     char group_name[25];
 
     FILE *gname_file = fopen(group_name_file, "r");
-    if (gname_file == NULL) {
-        send_tcp(fd, res_nok);
+    if (gname_file == NULL)
         return true;
-    }
 
-    if (fscanf(gname_file, "%24s", group_name) < 0) {
-        send_tcp(fd, res_nok);
+    if (fscanf(gname_file, "%24s", group_name) < 0)
         return true;
-    }
 
-    if (fclose(gname_file) == EOF) {
-        send_tcp(fd, res_nok);
+    if (fclose(gname_file) == EOF)
         return true;
-    }
 
     DIR *dir = opendir(group_dir);
-    if (dir == NULL) {
-        send_tcp(fd, res_nok);
+    if (dir == NULL)
         return true;
-    }
 
     buffer_t res = {.data = "RUL OK ", .size = 7};
     if (send_tcp(fd, res))
@@ -462,5 +456,151 @@ bool subscribed_users(int fd, args_t args) {
     if (closedir(dir) == -1)
         return true;
 
+    return false;
+}
+
+bool post_request(int fd, args_t args) {
+    buffer_t request;
+    create_buffer(request, 14);
+    buffer_t res_nok = {.data = "RPT NOK\n", .size = 8};
+
+    if (receive_tcp(fd, request) <= 0)
+        return true;
+
+    char uid[6] = {0};
+    char gid[3] = {0};
+    char text_size_str[4] = {0};
+    int args_count = sscanf(request.data, "%5s%2s%3s", uid, gid, text_size_str);
+    if (args_count < 0)
+        return true;
+
+    int text_size = atoi(text_size_str);
+    size_t text_size_len = strlen(text_size_str);
+
+    bool valid_uid = is_uid(uid) && request.data[5] == ' ';
+    bool valid_gid = is_gid(gid) && request.data[8] == ' ';
+    bool valid_text_size =
+        text_size > 0 && text_size <= 240 && request.data[9 + text_size_len] == ' ';
+
+    if (!valid_uid || !valid_gid || !valid_text_size || args_count < 3)
+        return send_tcp(fd, res_nok);
+
+    bool logged_in;
+    check_if_logged_in(uid, &logged_in);
+    if (!logged_in)
+        return send_tcp(fd, res_nok);
+
+    int group_count;
+    if (count_groups("GROUPS", &group_count))
+        return true;
+
+    int gid_num = atoi(gid);
+    if (gid_num == 0 || gid_num > group_count)
+        return send_tcp(fd, res_nok);
+
+    bool subscribed;
+    check_if_subscribed(gid, uid, &subscribed);
+    if (!subscribed)
+        return send_tcp(fd, res_nok);
+
+    // 123 sakskadkaska
+    // 1 aghssgagsha
+    char text_data[241] = {0};
+    if (text_size_len < 3)
+        memcpy(text_data, request.data + 10 + text_size_len, 3 - text_size_len);
+
+    buffer_t text = {.data = text_data + (3 - text_size_len),
+                     .size = text_size - 1 + text_size_len};
+    if (receive_tcp(fd, text) <= 0)
+        return true;
+
+    printf("%s\n", text_data);
+
+    bool has_file = text_data[text_size] == ' ';
+    text_data[text_size] = '\0';
+
+    message_t data;
+    bool failed = false;
+    if (create_message(gid, uid, text_data, &data, &failed))
+        return true;
+
+    if (failed)
+        return send_tcp(fd, res_nok);
+
+    buffer_t res;
+    create_buffer(res, 9);
+    sprintf(res.data, "RPT %04d\n", data.mid);
+
+    if (!has_file)
+        return send_tcp(fd, res);
+
+    // Save file
+    buffer_t file_res;
+    create_buffer(file_res, 37);
+    receive_tcp(fd, file_res);
+
+    char file_name[25];
+    char file_size_str[11];
+    args_count = sscanf(file_res.data, "%24s%10s", file_name, file_size_str);
+    if (args_count < 0)
+        return true;
+
+    long file_size = atol(file_size_str);
+    size_t file_size_len = strlen(file_size_str);
+
+    bool valid_file_name = is_file_name(file_name) && file_res.data[strlen(file_name)] == ' ';
+    bool valid_file_size = file_size > 0 && file_size < 10000000000 &&
+                           file_res.data[strlen(file_name) + file_size_len + 1] == ' ';
+    // Fname Fsize data
+
+    if (!valid_file_name || !valid_file_size || args_count < 2)
+        return send_tcp(fd, res_nok);
+
+    char file_path[45];
+    sprintf(file_path, "%s/%s", data.message_dirname, file_name);
+
+    FILE *fp = fopen(file_path, "w");
+    if (fp == NULL)
+        return true;
+
+    ssize_t bytes_read = strlen(file_name) + file_size_len + 2;
+    fputs(file_res.data + bytes_read, fp);
+    file_size -= 36 - bytes_read;
+
+    buffer_t buffer;
+    create_buffer(buffer, 1025);
+
+    while (file_size > 0) {
+        bytes_read = receive_tcp(fd, buffer);
+        file_size -= bytes_read;
+        fwrite(buffer.data, bytes_read, 1, fp);
+    }
+
+    fclose(fp);
+
+    return send_tcp(fd, res);
+}
+
+bool retrieve_request(int fd, args_t args) {
+    buffer_t request;
+    create_buffer(request, 15);
+    buffer_t res_nok = {.data = "RRT NOK\n", .size = 8};
+
+    if (receive_tcp(fd, request) <= 0)
+        return true;
+
+    char uid[6] = {0};
+    char gid[3] = {0};
+    char mid[5] = {0};
+    int args_count = sscanf(request.data, "%5s%2s%4s", uid, gid, mid);
+    if (args_count < 0)
+        return true;
+
+    bool valid_uid = is_uid(uid) && request.data[5] == ' ';
+    bool valid_gid = is_gid(gid) && request.data[8] == ' ';
+    bool valid_mid = is_mid(mid) && request.data[13] == '\n';
+
+    if (!valid_uid || !valid_gid || !valid_mid || args_count < 3)
+        return send_tcp(fd, res_nok);
     return false;
 }

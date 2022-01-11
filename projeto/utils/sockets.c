@@ -112,6 +112,8 @@ ssize_t receive_tcp(int fd, buffer_t buffer) {
 
         bytes_to_read -= bytes_read;
         read_ptr += bytes_read;
+        if (*(read_ptr - 1) == '\n')
+            break;
     }
 
     // Make sure it's null terminated

@@ -96,7 +96,7 @@ bool handle_tcp_request(int fd, args_t args) {
     if (strncmp(prefix.data, "ULS ", 4) == 0)
         error = subscribed_users(client_fd, args);
     else if (strncmp(prefix.data, "PST ", 4) == 0)
-        error = send_tcp(client_fd, res_err);
+        error = post_request(client_fd, args);
     else if (strncmp(prefix.data, "RTV ", 4) == 0)
         error = send_tcp(client_fd, res_err);
     else
@@ -127,11 +127,12 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    freeaddrinfo(udp_addr);
+
     // TCP
     tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (tcp_fd == -1) {
         close(udp_fd);
-        freeaddrinfo(udp_addr);
         exit(EXIT_FAILURE);
     }
 
@@ -139,14 +140,12 @@ int main(int argc, char **argv) {
     if (tcp_addr == NULL) {
         close(udp_fd);
         close(tcp_fd);
-        freeaddrinfo(udp_addr);
         exit(EXIT_FAILURE);
     }
 
     if (bind(tcp_fd, tcp_addr->ai_addr, tcp_addr->ai_addrlen) == -1) {
         close(udp_fd);
         close(tcp_fd);
-        freeaddrinfo(udp_addr);
         freeaddrinfo(tcp_addr);
         exit(EXIT_FAILURE);
     }
@@ -154,10 +153,11 @@ int main(int argc, char **argv) {
     if (listen(tcp_fd, 5) == -1) {
         close(udp_fd);
         close(tcp_fd);
-        freeaddrinfo(udp_addr);
         freeaddrinfo(tcp_addr);
         exit(EXIT_FAILURE);
     }
+
+    freeaddrinfo(tcp_addr);
 
     fd_set current_sockets, ready_sockets;
     FD_ZERO(&current_sockets);
@@ -183,8 +183,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    freeaddrinfo(tcp_addr);
-    freeaddrinfo(udp_addr);
     close(tcp_fd);
     close(udp_fd);
 

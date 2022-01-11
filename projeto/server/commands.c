@@ -86,7 +86,7 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
-        return false;
+        return errno != ENOENT;
     }
 
     if (check_password(user_pass, pass, failed))
@@ -116,7 +116,7 @@ bool user_login(const char *uid, const char *pass, bool *failed) {
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
-        return false;
+        return errno != ENOENT;
     }
 
     if (check_password(user_pass, pass, failed))
@@ -155,7 +155,7 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
 
     if (stat(user_logged_in, &st) != 0) {
         *failed = true;
-        return false;
+        return errno != ENOENT;
     }
 
     if (unlink(user_logged_in) == 0)
@@ -297,7 +297,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
         if (gname_file == NULL)
             return true;
 
-        if (fwrite(gname, strlen(gname), 1, gname_file) == 0)
+        if (fputs(gname, gname_file) <= 0)
             return true;
 
         if (fclose(gname_file) == EOF)
@@ -431,3 +431,92 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
 
     return false;
 }
+
+bool check_if_logged_in(const char *uid, bool *success) {
+    char user_logged_in[35];
+    sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
+
+    struct stat st;
+    *success = stat(user_logged_in, &st) == 0;
+    return !success && errno != ENOENT;
+}
+
+bool check_if_subscribed(const char *gid, const char *uid, bool *result) {
+    char user_subscribed[20];
+    sprintf(user_subscribed, "GROUPS/%s/%s.txt", gid, uid);
+
+    struct stat st;
+    *result = stat(user_subscribed, &st) == 0;
+    return !result && errno != ENOENT;
+}
+
+bool create_message(const char *gid, const char *author, const char *text, message_t *data,
+                    bool *failed) {
+    char messages_dir[14];
+    char author_file_name[35];
+    char text_file_name[31];
+    sprintf(messages_dir, "GROUPS/%s/MSG", gid);
+
+    int count;
+    count_messages(messages_dir, &count);
+    if (count == 9999) {
+        *failed = true;
+        return false;
+    }
+
+    data->mid = count + 1;
+    sprintf(data->message_dirname, "%s/%04d", messages_dir, count + 1);
+    if (mkdir(data->message_dirname, 0700) == -1)
+        return true;
+    
+    sprintf(author_file_name, "%s/A U T H O R.txt", data->message_dirname);
+    sprintf(text_file_name, "%s/T E X T.txt", data->message_dirname);
+
+    FILE *author_file = fopen(author_file_name, "w");
+    if (author_file == NULL)
+        return true;
+    if (fputs(author, author_file) == EOF)
+        return true;
+    if (fclose(author_file) == EOF)
+        return true;
+    
+    FILE *text_file = fopen(text_file_name, "w");
+    if (text_file == NULL)
+        return true;
+    if (fputs(text, text_file) == EOF)
+        return true;
+    if (fclose(text_file) == EOF)
+        return true;
+    
+    return false;
+}
+
+/*
+                                          ██████      
+                                        ██▒▒░░▒▒░░    
+                                      ██▒▒░░▒▒░░▒▒▒▒░░
+                                      ██▓▓▒▒░░██▒▒    
+                                      ██▓▓▓▓▒▒██      
+                                      ██▓▓▓▓▓▓██      
+                                      ██▓▓▓▓██████    
+                                    ██▓▓▓▓▓▓██████    
+                                  ████████▓▓▓▓████    
+                              ████▓▓▓▓▒▒▒▒██████████  
+                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████  
+                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████  
+                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████  
+                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██    
+                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██    
+                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██    
+                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██      
+              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██        
+          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██          
+          ██▒▒▒▒████░░░░░░████████████████            
+      ████████▒▒▒▒████░░░░░░░░░░░░████                
+  ████████████▒▒██████████████████                    
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒                    
+████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒                
+  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒              
+  ██▓▓██                                              
+██████                                                
+*/
