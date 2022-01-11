@@ -145,7 +145,7 @@ bool unregister_user(sockets_t sockets, char *args) {
         // Log out if unregistering current logged in user
         if (logged_in && strcmp(id, uid) == 0) {
             logged_in = false;
-            group_selected = false;
+            // group_selected = false;
         }
         printf("User successfully unregistered\n");
     } else if (strcmp(reply.data, "RUN NOK\n") == 0) {
@@ -218,7 +218,7 @@ bool logout(sockets_t sockets) {
     if (strcmp(reply.data, "ROU OK\n") == 0) {
         printf("You are now logged out\n");
         logged_in = false;
-        group_selected = false;
+        // group_selected = false;
     } else if (strcmp(reply.data, "ROU NOK\n") == 0) {
         printf("Logout failed\n");
     } else {
@@ -420,10 +420,10 @@ bool list_user_groups(sockets_t sockets) {
 }
 
 bool select_group(char *args) {
-    if (!logged_in) {
-        printf("You are not logged in\n");
-        return false;
-    }
+    // if (!logged_in) {
+    //     printf("You are not logged in\n");
+    //     return false;
+    // }
 
     if (sscanf(args, "%2s", active_group) < 0)
         return true;
@@ -434,14 +434,14 @@ bool select_group(char *args) {
 }
 
 bool show_gid() {
-    if (!logged_in)
-        printf("You are not logged in\n");
-    else {
-        if (group_selected)
-            printf("%s\n", active_group);
-        else
-            printf("You don't have a group selected\n");
-    }
+    // if (!logged_in)
+    //     printf("You are not logged in\n");
+    // else {
+    if (group_selected)
+        printf("%s\n", active_group);
+    else
+        printf("You don't have a group selected\n");
+    // }
 
     return false;
 }
@@ -514,10 +514,11 @@ bool show_group_subscribers(int fd, buffer_t buffer, int bytes_read) {
 }
 
 bool list_group_users(sockets_t sockets) {
-    if (!logged_in) {
-        printf("You are not logged in\n");
-        return false;
-    } else if (!group_selected) {
+    // if (!logged_in) {
+    //     printf("You are not logged in\n");
+    //     return false;
+    // } else 
+    if (!group_selected) {
         printf("You don't have a group selected\n");
         return false;
     }
