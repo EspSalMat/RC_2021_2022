@@ -525,9 +525,11 @@ bool post_request(int fd, args_t args) {
     sprintf(rep, "RPT %04d\n", data.mid);
     buffer_t res = {.data = rep, .size = 9};
 
-    if (!has_file)
+    if (!has_file) {
+        if (args.verbose)
+            printf("UID=%s: post group %s:\n           \"%s\"\n", uid, gid, text);
         return send_tcp(fd, res);
-    // Check \n????
+    }
 
     // Save file
     offset++;
@@ -578,6 +580,9 @@ bool post_request(int fd, args_t args) {
     }
 
     fclose(posted_file);
+
+    if (args.verbose)
+        printf("UID=%s: post group %s:\n           \"%s\" %s\n", uid, gid, text, file_name);
 
     return send_tcp(fd, res);
 }
@@ -648,6 +653,9 @@ bool retrieve_request(int fd, args_t args) {
     aux.size = n;
     send_tcp(fd, aux);
     current_mid--;
+
+    if (args.verbose)
+        printf("UID=%s: retrieve group %s, message(s)\n", uid, gid);
 
     while (message_count > 0) {
         current_mid++;
