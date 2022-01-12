@@ -461,16 +461,18 @@ bool subscribed_users(int fd, args_t args) {
 
 bool post_request(int fd, args_t args) {
     buffer_t request;
-    create_buffer(request, 14);
+    create_buffer(request, 300);
     buffer_t res_nok = {.data = "RPT NOK\n", .size = 8};
 
-    if (receive_tcp(fd, request) <= 0)
+    ssize_t bytes_read = receive_tcp(fd, request);
+    if (bytes_read <= 0)
         return true;
 
     char uid[6] = {0};
     char gid[3] = {0};
     char text_size_str[4] = {0};
-    int args_count = sscanf(request.data, "%5s%2s%3s", uid, gid, text_size_str);
+    int offset;
+    int args_count = sscanf(request.data, "%5s%2s%3s%n", uid, gid, text_size_str, &offset);
     if (args_count < 0)
         return true;
 
@@ -484,6 +486,7 @@ bool post_request(int fd, args_t args) {
 
     if (!valid_uid || !valid_gid || !valid_text_size || args_count < 3)
         return send_tcp(fd, res_nok);
+    offset++;
 
     bool logged_in;
     check_if_logged_in(uid, &logged_in);
@@ -503,81 +506,78 @@ bool post_request(int fd, args_t args) {
     if (!subscribed)
         return send_tcp(fd, res_nok);
 
-    // 123 sakskadkaska
-    // 1 aghssgagsha
-    char text_data[241] = {0};
-    if (text_size_len < 3)
-        memcpy(text_data, request.data + 10 + text_size_len, 3 - text_size_len);
+    char text[241] = {0};
+    text[text_size] = '\0';
+    memcpy(text, request.data + offset, text_size);
+    offset += text_size;
 
-    buffer_t text = {.data = text_data + (3 - text_size_len),
-                     .size = text_size - 1 + text_size_len};
-    if (receive_tcp(fd, text) <= 0)
-        return true;
-
-    printf("%s\n", text_data);
-
-    bool has_file = text_data[text_size] == ' ';
-    text_data[text_size] = '\0';
-
+    bool has_file = request.data[offset] == ' ';
+    
     message_t data;
     bool failed = false;
-    if (create_message(gid, uid, text_data, &data, &failed))
+    if (create_message(gid, uid, text, &data, &failed))
         return true;
 
     if (failed)
         return send_tcp(fd, res_nok);
-
+    
     buffer_t res;
     create_buffer(res, 9);
     sprintf(res.data, "RPT %04d\n", data.mid);
-
+    
     if (!has_file)
         return send_tcp(fd, res);
+    // Check \n????
 
     // Save file
-    buffer_t file_res;
-    create_buffer(file_res, 37);
-    receive_tcp(fd, file_res);
+    offset++;
 
+    int offset_inc;
     char file_name[25];
     char file_size_str[11];
-    args_count = sscanf(file_res.data, "%24s%10s", file_name, file_size_str);
+    args_count = sscanf(request.data+offset, "%24s%10s%n", file_name, file_size_str, &offset_inc);
     if (args_count < 0)
         return true;
 
     long file_size = atol(file_size_str);
     size_t file_size_len = strlen(file_size_str);
 
-    bool valid_file_name = is_file_name(file_name) && file_res.data[strlen(file_name)] == ' ';
+    bool valid_file_name = is_file_name(file_name) && (request.data+offset)[strlen(file_name)] == ' ';
     bool valid_file_size = file_size > 0 && file_size < 10000000000 &&
-                           file_res.data[strlen(file_name) + file_size_len + 1] == ' ';
+                           (request.data+offset)[strlen(file_name) + file_size_len + 1] == ' ';
     // Fname Fsize data
-
     if (!valid_file_name || !valid_file_size || args_count < 2)
         return send_tcp(fd, res_nok);
-
+    offset += offset_inc + 1;
     char file_path[45];
     sprintf(file_path, "%s/%s", data.message_dirname, file_name);
 
-    FILE *fp = fopen(file_path, "w");
-    if (fp == NULL)
+    FILE *posted_file = fopen(file_path, "wb");
+    if (posted_file == NULL)
         return true;
 
-    ssize_t bytes_read = strlen(file_name) + file_size_len + 2;
-    fputs(file_res.data + bytes_read, fp);
-    file_size -= 36 - bytes_read;
-
-    buffer_t buffer;
-    create_buffer(buffer, 1025);
-
     while (file_size > 0) {
-        bytes_read = receive_tcp(fd, buffer);
-        file_size -= bytes_read;
-        fwrite(buffer.data, bytes_read, 1, fp);
+        size_t bytes = bytes_read - offset;
+        if (file_size < bytes)
+            bytes = file_size;
+        ssize_t bytes_written = fwrite(request.data + offset, 1, bytes, posted_file);
+        if (bytes_written == 0)
+            return true;
+        file_size -= bytes_written;
+        offset += bytes_written;
+
+        if (offset == bytes_read) {
+            bytes_read = receive_tcp(fd, request);
+            if (bytes_read < 0) {
+                fclose(posted_file);
+                return true;
+            }
+            offset = 0;
+        }
     }
 
-    fclose(fp);
-
+    fclose(posted_file);
+    
     return send_tcp(fd, res);
 }
 
