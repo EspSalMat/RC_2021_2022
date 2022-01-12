@@ -88,6 +88,17 @@ bool send_file_tcp(int fd, char *filename, size_t file_size) {
     return false;
 }
 
+ssize_t read_tcp(int fd, buffer_t buffer) {
+    ssize_t bytes_to_read = buffer.size - 1;
+    char *read_ptr = buffer.data;
+
+    ssize_t bytes_read = read(fd, read_ptr, bytes_to_read);
+    if (bytes_read >= 0)
+        buffer.data[bytes_read] = '\0';
+
+    return bytes_read;
+}
+
 ssize_t receive_tcp(int fd, buffer_t buffer) {
     ssize_t bytes_to_read = buffer.size - 1;
     char *read_ptr = buffer.data;
@@ -101,6 +112,8 @@ ssize_t receive_tcp(int fd, buffer_t buffer) {
 
         bytes_to_read -= bytes_read;
         read_ptr += bytes_read;
+        if (*(read_ptr - 1) == '\n')
+            break;
     }
 
     // Make sure it's null terminated

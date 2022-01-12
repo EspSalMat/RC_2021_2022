@@ -66,9 +66,9 @@ bool handle_udp_request(int fd, args_t args) {
         return unsubscribe_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     else if (strncmp(request.data, "GLM ", 4) == 0)
         return list_subscribed_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
-    else 
+    else
         return send_udp(fd, res_err, (struct sockaddr *)&addr, addrlen) <= 0;
-    
+
     return false;
 }
 
@@ -79,29 +79,29 @@ bool handle_tcp_request(int fd, args_t args) {
     int client_fd = accept(fd, (struct sockaddr *)&addr, &addrlen);
     if (client_fd == -1)
         return true;
-    
+
     buffer_t res_err = {.data = "ERR\n", .size = 4};
     buffer_t prefix;
     create_buffer(prefix, 5);
 
     // Read the request's prefix
-    if (receive_tcp(client_fd, prefix) <= 0) {
+    ssize_t bytes_read = receive_tcp(client_fd, prefix);
+    if (bytes_read <= 0) {
         close(client_fd);
         return true;
     }
 
     bool error = false;
-    printf("%s\n", prefix.data);
-    
+
     if (strncmp(prefix.data, "ULS ", 4) == 0)
-        error = send_tcp(client_fd, res_err);
+        error = subscribed_users(client_fd, args);
     else if (strncmp(prefix.data, "PST ", 4) == 0)
-        error = send_tcp(client_fd, res_err);
+        error = post_request(client_fd, args);
     else if (strncmp(prefix.data, "RTV ", 4) == 0)
-        error = send_tcp(client_fd, res_err);
+        error = retrieve_request(client_fd, args);
     else
         error = send_tcp(client_fd, res_err);
-    
+
     close(client_fd);
 
     return error;
@@ -127,11 +127,12 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    freeaddrinfo(udp_addr);
+
     // TCP
     tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (tcp_fd == -1) {
         close(udp_fd);
-        freeaddrinfo(udp_addr);
         exit(EXIT_FAILURE);
     }
 
@@ -139,14 +140,12 @@ int main(int argc, char **argv) {
     if (tcp_addr == NULL) {
         close(udp_fd);
         close(tcp_fd);
-        freeaddrinfo(udp_addr);
         exit(EXIT_FAILURE);
     }
 
     if (bind(tcp_fd, tcp_addr->ai_addr, tcp_addr->ai_addrlen) == -1) {
         close(udp_fd);
         close(tcp_fd);
-        freeaddrinfo(udp_addr);
         freeaddrinfo(tcp_addr);
         exit(EXIT_FAILURE);
     }
@@ -154,10 +153,11 @@ int main(int argc, char **argv) {
     if (listen(tcp_fd, 5) == -1) {
         close(udp_fd);
         close(tcp_fd);
-        freeaddrinfo(udp_addr);
         freeaddrinfo(tcp_addr);
         exit(EXIT_FAILURE);
     }
+
+    freeaddrinfo(tcp_addr);
 
     fd_set current_sockets, ready_sockets;
     FD_ZERO(&current_sockets);
@@ -173,20 +173,16 @@ int main(int argc, char **argv) {
             exit(EXIT_FAILURE);
 
         if (FD_ISSET(udp_fd, &ready_sockets)) {
-            printf("udp fd set\n");
             if (handle_udp_request(udp_fd, args))
                 should_exit = true;
         }
 
         if (FD_ISSET(tcp_fd, &ready_sockets)) {
-            printf("tcp fd set\n");
             if (handle_tcp_request(tcp_fd, args))
                 should_exit = true;
         }
     }
 
-    freeaddrinfo(tcp_addr);
-    freeaddrinfo(udp_addr);
     close(tcp_fd);
     close(udp_fd);
 

@@ -64,7 +64,7 @@ bool unsubscribe_all(const char *uid, const char *dir_name) {
         if (!is_gid(gid_dir->d_name))
             continue;
         unsubscribe_t result;
-        if (user_unsubscribe(uid, gid_dir->d_name, &result))
+        if (user_unsubscribe(uid, gid_dir->d_name, &result, true))
             return true;
     }
 
@@ -86,21 +86,21 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
-        return false;
+        return errno != ENOENT;
     }
 
     if (check_password(user_pass, pass, failed))
         return true;
     else if (*failed)
         return false;
-    
+
     if (unsubscribe_all(uid, "GROUPS"))
         return true;
-    
+
     bool logged_out = unlink(user_logged_in) == 0 || errno == ENOENT;
     if (logged_out && unlink(user_pass) == 0 && rmdir(user_dirname) == 0)
         return false;
-    
+
     return true;
 }
 
@@ -116,7 +116,7 @@ bool user_login(const char *uid, const char *pass, bool *failed) {
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
-        return false;
+        return errno != ENOENT;
     }
 
     if (check_password(user_pass, pass, failed))
@@ -155,7 +155,7 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
 
     if (stat(user_logged_in, &st) != 0) {
         *failed = true;
-        return false;
+        return errno != ENOENT;
     }
 
     if (unlink(user_logged_in) == 0)
@@ -297,7 +297,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
         if (gname_file == NULL)
             return true;
 
-        if (fwrite(gname, strlen(gname), 1, gname_file) == 0)
+        if (fputs(gname, gname_file) <= 0)
             return true;
 
         if (fclose(gname_file) == EOF)
@@ -328,20 +328,20 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
     FILE *subscribe_file = fopen(user_subscribe_file, "w");
     if (subscribe_file == NULL)
         return true;
-    
+
     if (fclose(subscribe_file) == EOF)
         return true;
 
     return false;
 }
 
-bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result) {
+bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result, bool unr) {
     *result = UNS_OK;
     char user_logged_in[35];
     sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
 
     struct stat st;
-    if (stat(user_logged_in, &st) != 0) {
+    if (stat(user_logged_in, &st) != 0 && !unr) {
         *result = UNS_EUSR;
         return errno != ENOENT;
     }
@@ -350,7 +350,7 @@ bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result) {
     int groups_count;
     if (count_groups("GROUPS", &groups_count))
         return true;
-        
+
     if (group_id > groups_count) {
         *result = UNS_EGRP;
         return false;
@@ -358,10 +358,10 @@ bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result) {
 
     char user_subscribe_file[20];
     sprintf(user_subscribe_file, "GROUPS/%s/%s.txt", gid, uid);
-    
+
     if (unlink(user_subscribe_file) != 0 && errno != ENOENT)
         return true;
-    
+
     return false;
 }
 
@@ -398,7 +398,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
             return true;
         else if (!is_subscribed)
             continue;
-        
+
         char gid_name[30];
         sprintf(gid_name, "GROUPS/%s/%s_name.txt", gid_dir->d_name, gid_dir->d_name);
 
@@ -418,7 +418,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
         int message_count;
         if (count_messages(msg_name, &message_count))
             return true;
-        
+
         list->mids[gid - 1] = message_count;
         list->subscribed[gid - 1] = true;
         list->len++;
@@ -431,3 +431,176 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
 
     return false;
 }
+
+bool check_if_logged_in(const char *uid, bool *success) {
+    char user_logged_in[35];
+    sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
+
+    struct stat st;
+    *success = stat(user_logged_in, &st) == 0;
+    return !success && errno != ENOENT;
+}
+
+bool check_if_subscribed(const char *gid, const char *uid, bool *result) {
+    char user_subscribed[20];
+    sprintf(user_subscribed, "GROUPS/%s/%s.txt", gid, uid);
+
+    struct stat st;
+    *result = stat(user_subscribed, &st) == 0;
+    return !result && errno != ENOENT;
+}
+
+bool create_message(const char *gid, const char *author, const char *text, message_t *data,
+                    bool *failed) {
+    char messages_dir[14];
+    char author_file_name[35];
+    char text_file_name[31];
+    sprintf(messages_dir, "GROUPS/%s/MSG", gid);
+
+    int count;
+    count_messages(messages_dir, &count);
+    if (count == 9999) {
+        *failed = true;
+        return false;
+    }
+
+    data->mid = count + 1;
+    sprintf(data->message_dirname, "%s/%04d", messages_dir, count + 1);
+    if (mkdir(data->message_dirname, 0700) == -1)
+        return true;
+
+    sprintf(author_file_name, "%s/A U T H O R.txt", data->message_dirname);
+    sprintf(text_file_name, "%s/T E X T.txt", data->message_dirname);
+
+    FILE *author_file = fopen(author_file_name, "w");
+    if (author_file == NULL)
+        return true;
+    if (fputs(author, author_file) == EOF)
+        return true;
+    if (fclose(author_file) == EOF)
+        return true;
+
+    FILE *text_file = fopen(text_file_name, "w");
+    if (text_file == NULL)
+        return true;
+    if (fputs(text, text_file) == EOF)
+        return true;
+    if (fclose(text_file) == EOF)
+        return true;
+
+    return false;
+}
+
+bool is_message_complete(const char *dir_name, bool *is_complete) {
+    char author_file_name[35];
+    char text_file_name[31];
+    sprintf(author_file_name, "%s/A U T H O R.txt", dir_name);
+    sprintf(text_file_name, "%s/T E X T.txt", dir_name);
+    *is_complete = true;
+
+    struct stat st;
+    bool exist = stat(author_file_name, &st) == 0;
+    if (!exist && errno != ENOENT)
+        return true;
+    else if (!exist)
+        *is_complete = false;
+
+    exist = stat(text_file_name, &st) == 0;
+    if (!exist && errno != ENOENT)
+        return true;
+    else if (!exist)
+        *is_complete = false;
+
+    return false;
+}
+
+bool count_complete_msgs(const char *dir_name, int first_mid, int *count) {
+    DIR *msg_dir = opendir(dir_name);
+    if (msg_dir == NULL)
+        return true;
+
+    *count = 0;
+    struct dirent *mid_dir;
+    while ((mid_dir = readdir(msg_dir)) != NULL) {
+        if (!is_mid(mid_dir->d_name))
+            continue;
+
+        int mid = atoi(mid_dir->d_name); 
+        if (mid < first_mid)
+            continue;
+
+        char message_dir[19];
+        sprintf(message_dir, "%s/%s", dir_name, mid_dir->d_name);
+        bool is_complete;
+        if (is_message_complete(message_dir, &is_complete))
+            return true;
+        
+        if (is_complete)
+            (*count)++;
+    }
+
+    if (closedir(msg_dir) == -1)
+        return true;
+
+    return false;
+}
+
+/*
+                                          ██████
+                                        ██▒▒░░▒▒░░
+                                      ██▒▒░░▒▒░░▒▒▒▒░░
+                                      ██▓▓▒▒░░██▒▒
+                                      ██▓▓▓▓▒▒██
+                                      ██▓▓▓▓▓▓██
+                                      ██▓▓▓▓██████
+                                    ██▓▓▓▓▓▓██████
+                                  ████████▓▓▓▓████
+                              ████▓▓▓▓▒▒▒▒██████████
+                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████
+                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████
+                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████
+                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██
+                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██
+                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ██▒▒▒▒████░░░░░░████████████████
+      ████████▒▒▒▒████░░░░░░░░░░░░████
+  ████████████▒▒██████████████████
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒
+████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒
+  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒
+  ██▓▓██
+██████
+*/
+
+/*
+                                          ██████
+                                        ██▒▒░░▒▒░░
+                                      ██▒▒░░▒▒░░▒▒▒▒░░
+                                      ██▓▓▒▒░░██▒▒
+                                      ██▓▓▓▓▒▒██
+                                      ██▓▓▓▓▓▓██
+                                      ██▓▓▓▓██████
+                                    ██▓▓▓▓▓▓██████
+                                  ████████▓▓▓▓████
+                              ████▓▓▓▓▒▒▒▒██████████
+                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████
+                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████
+                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████
+                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██
+                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██
+                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ██▒▒▒▒████░░░░░░████████████████
+      ████████▒▒▒▒████░░░░░░░░░░░░████
+  ████████████▒▒██████████████████
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒
+████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒
+  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒
+  ██▓▓██
+██████
+*/
