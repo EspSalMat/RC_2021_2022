@@ -428,7 +428,7 @@ bool select_group(char *args) {
     if (sscanf(args, "%2s", active_group) < 0)
         return true;
     group_selected = true;
-    printf("Group %s - \"%s\" is now the active group\n", active_group);
+    printf("Group %s is now the active group\n", active_group);
 
     return false;
 }

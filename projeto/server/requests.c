@@ -169,7 +169,7 @@ bool subscribe_request(int fd, args_t args, buffer_t request, const struct socka
     buffer_t res_egrp = {.data = "RGS E_GRP\n", .size = 10};
     buffer_t res_eusr = {.data = "RGS E_USR\n", .size = 10};
     buffer_t res_efull = {.data = "RGS E_FULL\n", .size = 11};
-    buffer_t res_gname = {.data = "RGS GNAME\n", .size = 7};
+    buffer_t res_gname = {.data = "RGS GNAME\n", .size = 10};
 
     buffer_t res_new;
     create_buffer(res_new, 12);
@@ -521,7 +521,7 @@ bool post_request(int fd, args_t args) {
     if (failed)
         return send_tcp(fd, res_nok);
     
-    char rep[9] = {0};
+    char rep[10] = {0};
     sprintf(rep, "RPT %04d\n", data.mid);
     buffer_t res = {.data = rep, .size=9};
 
