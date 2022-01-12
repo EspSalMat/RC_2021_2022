@@ -190,8 +190,12 @@ int main(int argc, char **argv) {
                 if (pid == -1) {
                     should_exit = true;
                 } else if (pid == 0) {
-                    handle_tcp_request(client_fd, args);
-                    exit(EXIT_SUCCESS);
+                    if (handle_tcp_request(client_fd, args))
+                        exit(EXIT_FAILURE);
+                    else
+                        exit(EXIT_SUCCESS);
+                } else {
+                    close(client_fd);
                 }
             }
         }
