@@ -169,7 +169,7 @@ bool subscribe_request(int fd, args_t args, buffer_t request, const struct socka
     buffer_t res_egrp = {.data = "RGS E_GRP\n", .size = 10};
     buffer_t res_eusr = {.data = "RGS E_USR\n", .size = 10};
     buffer_t res_efull = {.data = "RGS E_FULL\n", .size = 11};
-    buffer_t res_gname = {.data = "RGS GNAME\n", .size = 10};
+    buffer_t res_gname = {.data = "RGS E_GNAME\n", .size = 12};
 
     buffer_t res_new;
     create_buffer(res_new, 12);
