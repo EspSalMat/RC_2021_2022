@@ -66,9 +66,9 @@ bool handle_udp_request(int fd, args_t args) {
         return unsubscribe_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
     else if (strncmp(request.data, "GLM ", 4) == 0)
         return list_subscribed_request(fd, args, request, (struct sockaddr *)&addr, addrlen);
-    else 
+    else
         return send_udp(fd, res_err, (struct sockaddr *)&addr, addrlen) <= 0;
-    
+
     return false;
 }
 
@@ -79,7 +79,7 @@ bool handle_tcp_request(int fd, args_t args) {
     int client_fd = accept(fd, (struct sockaddr *)&addr, &addrlen);
     if (client_fd == -1)
         return true;
-    
+
     buffer_t res_err = {.data = "ERR\n", .size = 4};
     buffer_t prefix;
     create_buffer(prefix, 5);
@@ -92,16 +92,16 @@ bool handle_tcp_request(int fd, args_t args) {
     }
 
     bool error = false;
-    
+
     if (strncmp(prefix.data, "ULS ", 4) == 0)
         error = subscribed_users(client_fd, args);
     else if (strncmp(prefix.data, "PST ", 4) == 0)
         error = post_request(client_fd, args);
     else if (strncmp(prefix.data, "RTV ", 4) == 0)
-        error = send_tcp(client_fd, res_err);
+        error = retrieve_request(client_fd, args);
     else
         error = send_tcp(client_fd, res_err);
-    
+
     close(client_fd);
 
     return error;
