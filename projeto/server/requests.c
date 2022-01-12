@@ -521,10 +521,10 @@ bool post_request(int fd, args_t args) {
     if (failed)
         return send_tcp(fd, res_nok);
     
-    buffer_t res;
-    create_buffer(res, 9);
-    sprintf(res.data, "RPT %04d\n", data.mid);
-    
+    char rep[9] = {0};
+    sprintf(rep, "RPT %04d\n", data.mid);
+    buffer_t res = {.data = rep, .size=9};
+
     if (!has_file)
         return send_tcp(fd, res);
     // Check \n????
