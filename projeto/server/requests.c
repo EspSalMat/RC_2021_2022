@@ -1,13 +1,13 @@
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "../utils/sockets.h"
 #include "../utils/validate.h"
 #include "commands.h"
 #include "requests.h"
-
-#include "dirent.h"
 
 bool register_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
                       socklen_t addrlen) {
@@ -617,10 +617,110 @@ bool retrieve_request(int fd, args_t args) {
     if (gid_num == 0 || gid_num > group_count)
         return send_tcp(fd, res_nok);
 
+    int current_mid = atoi(mid);
+    if (current_mid == 0)
+        return send_tcp(fd, res_nok);
+
     bool subscribed;
     check_if_subscribed(gid, uid, &subscribed);
     if (!subscribed)
         return send_tcp(fd, res_nok);
+
+    char messages_dir[14];
+    sprintf(messages_dir, "GROUPS/%s/MSG", gid);
+    int message_count;
+    if (count_complete_msgs(messages_dir, current_mid, &message_count))
+        return true;
+
+    // You can only retrieve up to 20 messages
+    message_count = message_count <= 20 ? message_count : 20;
+    buffer_t res_eof = {.data = "RRT EOF\n", .size = 8};
+
+    if (message_count == 0)
+        return send_tcp(fd, res_eof);
+
+    buffer_t aux;
+    create_buffer(aux, 25);
+
+    int n = sprintf(aux.data, "RRT OK %d", message_count);
+    if (n < 0)
+        return true;
+    aux.size = n;
+    send_tcp(fd, aux);
+    current_mid--;
+
+    while (message_count > 0) {
+        current_mid++;
+        char message_dir_name[19];
+        sprintf(message_dir_name, "%s/%04d", messages_dir, current_mid);
+        bool complete = false;
+        if (is_message_complete(message_dir_name, &complete))
+            return true;
+        else if (!complete)
+            continue;
+        
+        message_count--;
+        int n = sprintf(aux.data, " %04d ", current_mid);
+        if (n < 0)
+            return true;
+        aux.size = n;
+        send_tcp(fd, aux);
+
+        char author_file_name[35];
+        char text_file_name[31];
+        sprintf(author_file_name, "%s/A U T H O R.txt", message_dir_name);
+        sprintf(text_file_name, "%s/T E X T.txt", message_dir_name);
+
+        if (send_file_tcp(fd, author_file_name, 5))
+            return true;
+
+        struct stat st;
+        if (stat(text_file_name, &st) != 0)
+            return true;
+
+        n = sprintf(aux.data, " %llu ", st.st_size);
+        if (n < 0)
+            return true;
+        aux.size = n;
+        send_tcp(fd, aux);
+
+        if (send_file_tcp(fd, text_file_name, st.st_size))
+            return true;
+
+        DIR *message_dir = opendir(message_dir_name);
+        if (message_dir == NULL)
+            return true;
+
+        struct dirent *entry;
+        while ((entry = readdir(message_dir)) != NULL) {
+            if (entry->d_name[0] == '.')
+                continue;
+
+            bool not_author = strcmp(entry->d_name, "A U T H O R.txt") != 0;
+            bool not_text = strcmp(entry->d_name, "T E X T.txt") != 0;
+            if (not_author && not_text) {
+                char file_name[44];
+                sprintf(file_name, "%s/%s", message_dir_name, entry->d_name);
+
+                if (stat(file_name, &st) != 0)
+                    return true;
+
+                n = sprintf(aux.data, " / %s %llu ", entry->d_name, st.st_size);
+                if (n < 0)
+                    return true;
+                aux.size = n;
+                send_tcp(fd, aux);
+
+                if (send_file_tcp(fd, file_name, st.st_size))
+                    return true;
+            }
+        }
+    }
+
+    aux.data = "\n";
+    aux.size = 1;
+    if (send_tcp(fd, aux))
+        return true;
 
     return false;
 }

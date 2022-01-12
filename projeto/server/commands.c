@@ -468,7 +468,7 @@ bool create_message(const char *gid, const char *author, const char *text, messa
     sprintf(data->message_dirname, "%s/%04d", messages_dir, count + 1);
     if (mkdir(data->message_dirname, 0700) == -1)
         return true;
-    
+
     sprintf(author_file_name, "%s/A U T H O R.txt", data->message_dirname);
     sprintf(text_file_name, "%s/T E X T.txt", data->message_dirname);
 
@@ -479,7 +479,7 @@ bool create_message(const char *gid, const char *author, const char *text, messa
         return true;
     if (fclose(author_file) == EOF)
         return true;
-    
+
     FILE *text_file = fopen(text_file_name, "w");
     if (text_file == NULL)
         return true;
@@ -487,36 +487,120 @@ bool create_message(const char *gid, const char *author, const char *text, messa
         return true;
     if (fclose(text_file) == EOF)
         return true;
-    
+
+    return false;
+}
+
+bool is_message_complete(const char *dir_name, bool *is_complete) {
+    char author_file_name[35];
+    char text_file_name[31];
+    sprintf(author_file_name, "%s/A U T H O R.txt", dir_name);
+    sprintf(text_file_name, "%s/T E X T.txt", dir_name);
+    *is_complete = true;
+
+    struct stat st;
+    bool exist = stat(author_file_name, &st) == 0;
+    if (!exist && errno != ENOENT)
+        return true;
+    else if (!exist)
+        *is_complete = false;
+
+    exist = stat(text_file_name, &st) == 0;
+    if (!exist && errno != ENOENT)
+        return true;
+    else if (!exist)
+        *is_complete = false;
+
+    return false;
+}
+
+bool count_complete_msgs(const char *dir_name, int first_mid, int *count) {
+    DIR *msg_dir = opendir(dir_name);
+    if (msg_dir == NULL)
+        return true;
+
+    *count = 0;
+    struct dirent *mid_dir;
+    while ((mid_dir = readdir(msg_dir)) != NULL) {
+        if (!is_mid(mid_dir->d_name))
+            continue;
+
+        int mid = atoi(mid_dir->d_name); 
+        if (mid < first_mid)
+            continue;
+
+        char message_dir[19];
+        sprintf(message_dir, "%s/%s", dir_name, mid_dir->d_name);
+        bool is_complete;
+        if (is_message_complete(message_dir, &is_complete))
+            return true;
+        
+        if (is_complete)
+            (*count)++;
+    }
+
+    if (closedir(msg_dir) == -1)
+        return true;
+
     return false;
 }
 
 /*
-                                          ██████      
-                                        ██▒▒░░▒▒░░    
+                                          ██████
+                                        ██▒▒░░▒▒░░
                                       ██▒▒░░▒▒░░▒▒▒▒░░
-                                      ██▓▓▒▒░░██▒▒    
-                                      ██▓▓▓▓▒▒██      
-                                      ██▓▓▓▓▓▓██      
-                                      ██▓▓▓▓██████    
-                                    ██▓▓▓▓▓▓██████    
-                                  ████████▓▓▓▓████    
-                              ████▓▓▓▓▒▒▒▒██████████  
-                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████  
-                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████  
-                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████  
-                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██    
-                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██    
-                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██    
-                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██      
-              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██        
-          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██          
-          ██▒▒▒▒████░░░░░░████████████████            
-      ████████▒▒▒▒████░░░░░░░░░░░░████                
-  ████████████▒▒██████████████████                    
-██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒                    
-████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒                
-  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒              
-  ██▓▓██                                              
-██████                                                
+                                      ██▓▓▒▒░░██▒▒
+                                      ██▓▓▓▓▒▒██
+                                      ██▓▓▓▓▓▓██
+                                      ██▓▓▓▓██████
+                                    ██▓▓▓▓▓▓██████
+                                  ████████▓▓▓▓████
+                              ████▓▓▓▓▒▒▒▒██████████
+                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████
+                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████
+                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████
+                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██
+                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██
+                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ██▒▒▒▒████░░░░░░████████████████
+      ████████▒▒▒▒████░░░░░░░░░░░░████
+  ████████████▒▒██████████████████
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒
+████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒
+  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒
+  ██▓▓██
+██████
+*/
+
+/*
+                                          ██████
+                                        ██▒▒░░▒▒░░
+                                      ██▒▒░░▒▒░░▒▒▒▒░░
+                                      ██▓▓▒▒░░██▒▒
+                                      ██▓▓▓▓▒▒██
+                                      ██▓▓▓▓▓▓██
+                                      ██▓▓▓▓██████
+                                    ██▓▓▓▓▓▓██████
+                                  ████████▓▓▓▓████
+                              ████▓▓▓▓▒▒▒▒██████████
+                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████
+                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████
+                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████
+                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██
+                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██
+                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ██▒▒▒▒████░░░░░░████████████████
+      ████████▒▒▒▒████░░░░░░░░░░░░████
+  ████████████▒▒██████████████████
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒
+████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒
+  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒
+  ██▓▓██
+██████
 */

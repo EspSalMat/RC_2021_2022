@@ -42,7 +42,15 @@ typedef struct {
     bool has_file;
 } message_t;
 
+typedef struct {
+    int mid[20];
+    bool has_file[20];
+    char file_names[20][25];
+} messages_t;
+
 bool create_message(const char *gid, const char *author, const char *text, message_t *data,
                     bool *failed);
+bool is_message_complete(const char *dir_name, bool *is_complete);
+bool count_complete_msgs(const char *dir_name, int first_mid, int *last_mid);
 
 #endif
