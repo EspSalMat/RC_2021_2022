@@ -72,37 +72,41 @@ bool handle_udp_request(int fd, args_t args) {
     return false;
 }
 
-bool handle_tcp_request(int fd, args_t args) {
+bool accept_new_connection(int fd, int *client_fd) {
     struct sockaddr_in addr;
     socklen_t addrlen;
 
-    int client_fd = accept(fd, (struct sockaddr *)&addr, &addrlen);
-    if (client_fd == -1)
+    *client_fd = accept(fd, (struct sockaddr *)&addr, &addrlen);
+    if (*client_fd == -1)
         return true;
 
+    return false;
+}
+
+bool handle_tcp_request(int fd, args_t args) {
     buffer_t res_err = {.data = "ERR\n", .size = 4};
     buffer_t prefix;
     create_buffer(prefix, 5);
 
     // Read the request's prefix
-    ssize_t bytes_read = receive_tcp(client_fd, prefix);
+    ssize_t bytes_read = receive_tcp(fd, prefix);
     if (bytes_read <= 0) {
-        close(client_fd);
+        close(fd);
         return true;
     }
 
     bool error = false;
 
     if (strncmp(prefix.data, "ULS ", 4) == 0)
-        error = subscribed_users(client_fd, args);
+        error = subscribed_users(fd, args);
     else if (strncmp(prefix.data, "PST ", 4) == 0)
-        error = post_request(client_fd, args);
+        error = post_request(fd, args);
     else if (strncmp(prefix.data, "RTV ", 4) == 0)
-        error = retrieve_request(client_fd, args);
+        error = retrieve_request(fd, args);
     else
-        error = send_tcp(client_fd, res_err);
+        error = send_tcp(fd, res_err);
 
-    close(client_fd);
+    close(fd);
 
     return error;
 }
@@ -172,15 +176,27 @@ int main(int argc, char **argv) {
         if (select(maxfd + 1, &ready_sockets, NULL, NULL, NULL) < 0)
             exit(EXIT_FAILURE);
 
-        if (FD_ISSET(udp_fd, &ready_sockets)) {
-            if (handle_udp_request(udp_fd, args))
-                should_exit = true;
+        for (int i = 0; i <= maxfd; i++) {
+            if (!FD_ISSET(i, &ready_sockets))
+                continue;
+            
+            if (i == udp_fd) {
+                if (handle_udp_request(udp_fd, args))
+                    should_exit = true;
+            } else if (i == tcp_fd) {
+                int client_fd;
+                if (accept_new_connection(tcp_fd, &client_fd))
+                    should_exit = true;
+                FD_SET(client_fd, &current_sockets);
+                if (client_fd > maxfd)
+                    maxfd = client_fd;
+            } else {
+                if (handle_tcp_request(i, args))
+                    should_exit = true;
+                FD_CLR(i, &current_sockets);
+            }
         }
-
-        if (FD_ISSET(tcp_fd, &ready_sockets)) {
-            if (handle_tcp_request(tcp_fd, args))
-                should_exit = true;
-        }
+        
     }
 
     close(tcp_fd);
