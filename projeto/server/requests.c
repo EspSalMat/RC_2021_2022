@@ -512,7 +512,7 @@ bool post_request(int fd, args_t args) {
     offset += text_size;
 
     bool has_file = request.data[offset] == ' ';
-    
+
     message_t data;
     bool failed = false;
     if (create_message(gid, uid, text, &data, &failed))
@@ -520,10 +520,10 @@ bool post_request(int fd, args_t args) {
 
     if (failed)
         return send_tcp(fd, res_nok);
-    
+
     char rep[10] = {0};
     sprintf(rep, "RPT %04d\n", data.mid);
-    buffer_t res = {.data = rep, .size=9};
+    buffer_t res = {.data = rep, .size = 9};
 
     if (!has_file)
         return send_tcp(fd, res);
@@ -535,16 +535,17 @@ bool post_request(int fd, args_t args) {
     int offset_inc;
     char file_name[25];
     char file_size_str[11];
-    args_count = sscanf(request.data+offset, "%24s%10s%n", file_name, file_size_str, &offset_inc);
+    args_count = sscanf(request.data + offset, "%24s%10s%n", file_name, file_size_str, &offset_inc);
     if (args_count < 0)
         return true;
 
     long file_size = atol(file_size_str);
     size_t file_size_len = strlen(file_size_str);
 
-    bool valid_file_name = is_file_name(file_name) && (request.data+offset)[strlen(file_name)] == ' ';
+    bool valid_file_name =
+        is_file_name(file_name) && (request.data + offset)[strlen(file_name)] == ' ';
     bool valid_file_size = file_size > 0 && file_size < 10000000000 &&
-                           (request.data+offset)[strlen(file_name) + file_size_len + 1] == ' ';
+                           (request.data + offset)[strlen(file_name) + file_size_len + 1] == ' ';
     // Fname Fsize data
     if (!valid_file_name || !valid_file_size || args_count < 2)
         return send_tcp(fd, res_nok);
@@ -577,7 +578,7 @@ bool post_request(int fd, args_t args) {
     }
 
     fclose(posted_file);
-    
+
     return send_tcp(fd, res);
 }
 
@@ -602,5 +603,24 @@ bool retrieve_request(int fd, args_t args) {
 
     if (!valid_uid || !valid_gid || !valid_mid || args_count < 3)
         return send_tcp(fd, res_nok);
+
+    bool logged_in;
+    check_if_logged_in(uid, &logged_in);
+    if (!logged_in)
+        return send_tcp(fd, res_nok);
+
+    int group_count;
+    if (count_groups("GROUPS", &group_count))
+        return true;
+
+    int gid_num = atoi(gid);
+    if (gid_num == 0 || gid_num > group_count)
+        return send_tcp(fd, res_nok);
+
+    bool subscribed;
+    check_if_subscribed(gid, uid, &subscribed);
+    if (!subscribed)
+        return send_tcp(fd, res_nok);
+
     return false;
 }
