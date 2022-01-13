@@ -16,9 +16,9 @@
 #include "requests.h"
 
 #define DEFAULT_PORT "58054"
-#define MAX_MESSAGE 129
 #define MAX_RESPONSE 3275
 
+/* Parse the command line argumnents into the args_t structure */
 args_t parse_args(int argc, char **argv) {
     args_t args;
     args.port = DEFAULT_PORT;
@@ -36,6 +36,16 @@ args_t parse_args(int argc, char **argv) {
     return args;
 }
 
+void print_ip_and_port(struct sockaddr_in *addr) {
+    char ip[INET_ADDRSTRLEN];
+    uint16_t port;
+
+    inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
+    port = htons(addr->sin_port);
+
+    printf("from %s:%d -> ", ip, port);
+}
+
 bool handle_udp_request(int fd, args_t args) {
     buffer_t request;
     create_buffer(request, 39);
@@ -48,6 +58,8 @@ bool handle_udp_request(int fd, args_t args) {
     if (n <= 0)
         return true;
 
+    if (args.verbose)
+        print_ip_and_port(&addr);
     buffer_t res_err = {.data = "ERR\n", .size = 4};
 
     if (strncmp(request.data, "REG ", 4) == 0)
@@ -72,13 +84,16 @@ bool handle_udp_request(int fd, args_t args) {
     return false;
 }
 
-bool accept_new_connection(int fd, int *client_fd) {
+bool accept_new_connection(int fd, int *client_fd, args_t args) {
     struct sockaddr_in addr;
     socklen_t addrlen;
 
     *client_fd = accept(fd, (struct sockaddr *)&addr, &addrlen);
     if (*client_fd == -1)
         return true;
+    
+    if (args.verbose)
+        print_ip_and_port(&addr);
 
     return false;
 }
@@ -183,7 +198,7 @@ int main(int argc, char **argv) {
 
         if (FD_ISSET(tcp_fd, &ready_sockets)) {
             int client_fd;
-            if (accept_new_connection(tcp_fd, &client_fd)) {
+            if (accept_new_connection(tcp_fd, &client_fd, args)) {
                 should_exit = true;
             } else {
                 pid_t pid = fork();

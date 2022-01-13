@@ -1,6 +1,7 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
+/* Structure that saves the server adress of UDP and TCP client*/
 typedef struct {
     int udp_fd;
     struct addrinfo *udp_addr;
@@ -22,5 +23,6 @@ bool show_gid();
 bool list_group_users(sockets_t sockets);
 bool post(sockets_t sockets, char *args);
 bool retrieve(sockets_t sockets, char *args);
+bool unknown_command();
 
 #endif /* COMMANDS_H */

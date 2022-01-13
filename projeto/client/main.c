@@ -1,10 +1,10 @@
+#include <errno.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <errno.h>
 
 #include "../utils/sockets.h"
 #include "commands.h"
@@ -13,11 +13,13 @@
 #define MAX_COMMAND 12
 #define MAX_LINE 273
 
+/* Sructure that stores the command line argumnents */
 typedef struct {
     char *port;
     char *ip;
 } args_t;
 
+/* Parse the command line argumnents into the args_t structure */
 args_t parse_args(int argc, char **argv) {
     args_t args;
     args.port = DEFAULT_PORT;
@@ -34,22 +36,18 @@ args_t parse_args(int argc, char **argv) {
     return args;
 }
 
-bool unknown_command() {
-    printf("Unknown command\n");
-    return false;
-}
-
+/* Reads and proccesses a command and returns true if the client should exit */
 bool process_command(sockets_t sockets) {
     char raw_input[MAX_LINE];
-    char command[MAX_COMMAND];
-    int command_length;
-    errno = 0;
-    
     if (fgets(raw_input, sizeof raw_input, stdin) == NULL) {
         return true;
     }
+
+    int command_length;
+    char command[MAX_COMMAND] = {0};
     sscanf(raw_input, "%11s%n", command, &command_length);
 
+    errno = 0;
     if (strcmp(command, "exit") == 0)
         return logout_on_exit(sockets);
     else if (strcmp(command, "su") == 0 || strcmp(command, "showuid") == 0)
@@ -80,15 +78,8 @@ bool process_command(sockets_t sockets) {
         return post(sockets, raw_input + command_length + 1);
     else if (strcmp(command, "retrieve") == 0)
         return retrieve(sockets, raw_input + command_length + 1);
-    else 
+    else
         return unknown_command();
-}
-
-void set_timeout(int fd, int sec) {
-    struct timeval timeout;
-    memset((char *)&timeout, 0, sizeof(timeout));
-    timeout.tv_sec = 2;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout);
 }
 
 int main(int argc, char **argv) {
@@ -119,6 +110,7 @@ int main(int argc, char **argv) {
         should_exit = process_command(sockets);
     }
 
+    /* Prints a message if an error occured */
     int exit_code = EXIT_SUCCESS;
     if (errno != 0) {
         perror("Error");
