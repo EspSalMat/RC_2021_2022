@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -164,10 +165,15 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
     return true;
 }
 
-bool count_messages(const char *dir_name, int *message_count) {
+bool count_messages(const char *dir_name, int *message_count, int *lock_fd) {
     DIR *msg_dir = opendir(dir_name);
     if (msg_dir == NULL)
         return true;
+    
+    if (lock_fd != NULL) {
+        *lock_fd = dirfd(msg_dir);
+        flock(*lock_fd, LOCK_EX);
+    }
 
     *message_count = 0;
     struct dirent *mid_dir;
@@ -177,8 +183,11 @@ bool count_messages(const char *dir_name, int *message_count) {
         (*message_count)++;
     }
 
-    if (closedir(msg_dir) == -1)
+    if (closedir(msg_dir) == -1) {
+        if (lock_fd != NULL) 
+            flock(*lock_fd, LOCK_UN);
         return true;
+    }
 
     return false;
 }
@@ -215,7 +224,7 @@ bool list_groups(grouplist_t *list) {
         sprintf(msg_name, "GROUPS/%s/MSG", gid_dir->d_name);
 
         int message_count;
-        if (count_messages(msg_name, &message_count))
+        if (count_messages(msg_name, &message_count, NULL))
             return true;
         list->mids[gid - 1] = message_count;
 
@@ -416,7 +425,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
         sprintf(msg_name, "GROUPS/%s/MSG", gid_dir->d_name);
 
         int message_count;
-        if (count_messages(msg_name, &message_count))
+        if (count_messages(msg_name, &message_count, NULL))
             return true;
 
         list->mids[gid - 1] = message_count;
@@ -457,17 +466,24 @@ bool create_message(const char *gid, const char *author, const char *text, messa
     char text_file_name[31];
     sprintf(messages_dir, "GROUPS/%s/MSG", gid);
 
+    // LOCK
+    int lock_fd;
     int count;
-    count_messages(messages_dir, &count);
+    count_messages(messages_dir, &count, &lock_fd);
     if (count == 9999) {
         *failed = true;
+        flock(lock_fd, LOCK_UN);
         return false;
     }
 
     data->mid = count + 1;
     sprintf(data->message_dirname, "%s/%04d", messages_dir, count + 1);
-    if (mkdir(data->message_dirname, 0700) == -1)
+    if (mkdir(data->message_dirname, 0700) == -1) {
+        flock(lock_fd, LOCK_UN);
         return true;
+    }
+    
+    flock(lock_fd, LOCK_UN);
 
     sprintf(author_file_name, "%s/A U T H O R.txt", data->message_dirname);
     sprintf(text_file_name, "%s/T E X T.txt", data->message_dirname);
@@ -544,6 +560,36 @@ bool count_complete_msgs(const char *dir_name, int first_mid, int *count) {
 
     return false;
 }
+
+/*
+                                          ██████
+                                        ██▒▒░░▒▒░░
+                                      ██▒▒░░▒▒░░▒▒▒▒░░
+                                      ██▓▓▒▒░░██▒▒
+                                      ██▓▓▓▓▒▒██
+                                      ██▓▓▓▓▓▓██
+                                      ██▓▓▓▓██████
+                                    ██▓▓▓▓▓▓██████
+                                  ████████▓▓▓▓████
+                              ████▓▓▓▓▒▒▒▒██████████
+                            ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒██████
+                          ██▓▓▓▓▓▓▒▒▒▒░░▒▒▒▒▒▒▓▓████
+                        ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▓▓████
+                      ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓██
+                    ██▓▓▓▓▓▓▒▒▒▒░░░░▒▒▒▒▒▒▒▒▓▓▓▓██
+                  ██▓▓▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+                ████▓▓▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+              ██░░██████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ████████░░░░██████▒▒▒▒▒▒▒▒▒▒▓▓▓▓██
+          ██▒▒▒▒████░░░░░░████████████████
+      ████████▒▒▒▒████░░░░░░░░░░░░████
+  ████████████▒▒██████████████████
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  ▒▒          ▒▒
+████████████████    ▒▒▒▒▒▒      ▒▒▒▒▒▒
+  ██▓▓▓▓████      ▒▒  ▒▒  ▒▒  ▒▒  ▒▒  ▒▒
+  ██▓▓██
+██████
+*/
 
 /*
                                           ██████
