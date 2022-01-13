@@ -645,7 +645,7 @@ bool retrieve_request(int fd, args_t args) {
         return send_tcp(fd, res_eof);
 
     buffer_t aux;
-    create_buffer(aux, 25);
+    create_buffer(aux, 128);
 
     int n = sprintf(aux.data, "RRT OK %d", message_count);
     if (n < 0)
@@ -686,7 +686,7 @@ bool retrieve_request(int fd, args_t args) {
         if (stat(text_file_name, &st) != 0)
             return true;
 
-        n = sprintf(aux.data, " %llu ", st.st_size);
+        n = sprintf(aux.data, " %lu ", st.st_size);
         if (n < 0)
             return true;
         aux.size = n;
@@ -713,7 +713,7 @@ bool retrieve_request(int fd, args_t args) {
                 if (stat(file_name, &st) != 0)
                     return true;
 
-                n = sprintf(aux.data, " / %s %llu ", entry->d_name, st.st_size);
+                n = sprintf(aux.data, " / %s %lu ", entry->d_name, st.st_size);
                 if (n < 0)
                     return true;
                 aux.size = n;
