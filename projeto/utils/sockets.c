@@ -26,6 +26,7 @@ struct addrinfo *get_server_address(const char *ip, const char *port, int sockty
     hints.ai_flags = AI_PASSIVE;
     hints.ai_socktype = socktype;
 
+    // If ip is NULL, gets the address of the local machine
     errcode = getaddrinfo(ip, port, &hints, &res);
     if (errcode != 0)
         return NULL;

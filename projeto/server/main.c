@@ -45,7 +45,7 @@ void print_ip_and_port(struct sockaddr_in *addr) {
     inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
     port = htons(addr->sin_port);
 
-    printf("from %s:%d : \n", ip, port);
+    printf("Received request from %s:%d\n", ip, port);
 }
 
 /* Handles UDP requests from the client */

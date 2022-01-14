@@ -24,7 +24,6 @@ bool list_groups_request(int fd, args_t args, const struct sockaddr *addr, sockl
 bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct sockaddr *addr,
                              socklen_t addrlen);
 
-// TCP Requests
 bool subscribed_users(int fd, args_t args);
 bool post_request(int fd, args_t args);
 bool retrieve_request(int fd, args_t args);

@@ -39,12 +39,14 @@ bool count_groups(const char *dir_name, int *group_count);
 bool check_if_logged_in(const char *uid, bool *success);
 bool check_if_subscribed(const char *gid, const char *uid, bool *result);
 
+/* Stores data for retrieving messages */
 typedef struct {
     char message_dirname[19];
     int mid;
     bool has_file;
 } message_t;
 
+/* Stores data of a posted message */
 typedef struct {
     int mid[20];
     bool has_file[20];

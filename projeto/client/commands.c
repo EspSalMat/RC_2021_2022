@@ -891,14 +891,15 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                 return true;
 
             // Write file
-            while (file_size > 0) {
+            size_t bytes_left = file_size;
+            while (bytes_left > 0) {
                 size_t bytes = bytes_read - offset;
-                if (file_size < bytes)
-                    bytes = file_size;
+                if (bytes_left < bytes)
+                    bytes = bytes_left;
                 ssize_t bytes_written = fwrite(buffer.data + offset, 1, bytes, file);
                 if (bytes_written == 0)
                     return true;
-                file_size -= bytes_written;
+                bytes_left -= bytes_written;
                 offset += bytes_written;
 
                 if (offset == bytes_read) {
@@ -911,7 +912,7 @@ bool retrieve_messages(int fd, buffer_t buffer, ssize_t bytes_read, int message_
                 }
             }
 
-            printf(" file stored: %s\n", file_name);
+            printf(" file stored: %s (%lu bytes)\n", file_name, file_size);
             if (fclose(file) == EOF)
                 return true;
 

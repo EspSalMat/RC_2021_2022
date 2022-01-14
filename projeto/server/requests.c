@@ -29,7 +29,7 @@ bool register_request(int fd, args_t args, buffer_t request, const struct sockad
     bool valid_password = request.data[18] == '\n' && is_password(pass);
     if (args_count < 2 || !valid_uid || !valid_password) {
         if (args.verbose)
-            printf("Bad request for registering user\n");
+            printf("    Bad request for registering user\n");
         return send_udp(fd, res_nok, addr, addrlen) <= 0;
     }
 
@@ -38,15 +38,15 @@ bool register_request(int fd, args_t args, buffer_t request, const struct sockad
     bool error = register_user(uid, pass, &duplicate);
     if (!error && !duplicate) {
         if (args.verbose)
-            printf("UID=%s: new user\n", uid);
+            printf("    UID=%s: new user\n", uid);
         return send_udp(fd, res_ok, addr, addrlen) <= 0;
     } else if (!error && duplicate) {
         if (args.verbose)
-            printf("UID=%s: duplicated user\n", uid);
+            printf("    UID=%s: duplicated user\n", uid);
         return send_udp(fd, res_dup, addr, addrlen) <= 0;
     }
     if (args.verbose)
-        printf("UID=%s: failed to register user\n", uid);
+        printf("    UID=%s: failed to register user\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -69,7 +69,7 @@ bool unregister_request(int fd, args_t args, buffer_t request, const struct sock
     bool valid_password = request.data[18] == '\n' && is_password(pass);
     if (args_count < 2 || !valid_uid || !valid_password) {
         if (args.verbose)
-            printf("Bad request for unregistering user\n");
+            printf("    Bad request for unregistering user\n");
         return send_udp(fd, res_nok, addr, addrlen) <= 0;
     }
 
@@ -78,11 +78,11 @@ bool unregister_request(int fd, args_t args, buffer_t request, const struct sock
     bool error = unregister_user(uid, pass, &failed);
     if (!error && !failed) {
         if (args.verbose)
-            printf("UID=%s: user deleted\n", uid);
+            printf("    UID=%s: user deleted\n", uid);
         return send_udp(fd, res_ok, addr, addrlen) <= 0;
     }
     if (args.verbose)
-        printf("UID=%s: failed to delete user\n", uid);
+        printf("    UID=%s: failed to delete user\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -105,7 +105,7 @@ bool login_request(int fd, args_t args, buffer_t request, const struct sockaddr 
     bool valid_password = request.data[18] == '\n' && is_password(pass);
     if (args_count < 2 || !valid_uid || !valid_password) {
         if (args.verbose)
-            printf("Bad request for login\n");
+            printf("    Bad request for login\n");
         return send_udp(fd, res_nok, addr, addrlen) <= 0;
     }
 
@@ -114,11 +114,11 @@ bool login_request(int fd, args_t args, buffer_t request, const struct sockaddr 
     bool error = user_login(uid, pass, &failed);
     if (!error && !failed) {
         if (args.verbose)
-            printf("UID=%s: login ok\n", uid);
+            printf("    UID=%s: login ok\n", uid);
         return send_udp(fd, res_ok, addr, addrlen) <= 0;
     }
     if (args.verbose && failed)
-        printf("UID=%s: login not ok\n", uid);
+        printf("    UID=%s: login not ok\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -141,7 +141,7 @@ bool logout_request(int fd, args_t args, buffer_t request, const struct sockaddr
     bool valid_password = request.data[18] == '\n' && is_password(pass);
     if (args_count < 2 || !valid_uid || !valid_password) {
         if (args.verbose)
-            printf("Bad request for logout user\n");
+            printf("    Bad request for logout user\n");
         return send_udp(fd, res_nok, addr, addrlen) <= 0;
     }
 
@@ -150,12 +150,12 @@ bool logout_request(int fd, args_t args, buffer_t request, const struct sockaddr
     bool error = user_logout(uid, pass, &failed);
     if (!error && !failed) {
         if (args.verbose)
-            printf("UID=%s: logout ok\n", uid);
+            printf("    UID=%s: logout ok\n", uid);
         return send_udp(fd, res_ok, addr, addrlen) <= 0;
     }
 
     if (args.verbose && failed)
-        printf("UID=%s: logout not ok\n", uid);
+        printf("    UID=%s: logout not ok\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -166,7 +166,6 @@ bool subscribe_request(int fd, args_t args, buffer_t request, const struct socka
     char gid[3] = {0};
     char gname[25] = {0};
 
-    // GSR 12345 12 gname\n
     int args_count = sscanf(request.data + 4, "%5s%2s%24s", uid, gid, gname);
     if (args_count < 0)
         return true;
@@ -187,7 +186,7 @@ bool subscribe_request(int fd, args_t args, buffer_t request, const struct socka
     bool valid_gname = is_group_name(gname) && request.data[13 + strlen(gname)] == '\n';
     if (args_count < 3 || !valid_uid || !valid_gid || !valid_gname) {
         if (args.verbose)
-            printf("Bad request for subscribing\n");
+            printf("    Bad request for subscribing\n");
         return send_udp(fd, res_nok, addr, addrlen) <= 0;
     }
 
@@ -197,33 +196,33 @@ bool subscribe_request(int fd, args_t args, buffer_t request, const struct socka
     if (!error) {
         if (res.status == SUBS_OK) {
             if (args.verbose)
-                printf("UID=%s: subscribed group: %s - \"%s\"\n", uid, gid, gname);
+                printf("    UID=%s: subscribed group: %s - \"%s\"\n", uid, gid, gname);
             return send_udp(fd, res_ok, addr, addrlen) <= 0;
         } else if (res.status == SUBS_EGRP) {
             if (args.verbose)
-                printf("UID=%s: subscribed failed - invalid group\n", uid);
+                printf("    UID=%s: subscribed failed - invalid group\n", uid);
             return send_udp(fd, res_egrp, addr, addrlen) <= 0;
         } else if (res.status == SUBS_EUSR) {
             if (args.verbose)
-                printf("UID=%s: subscribed failed - invalid user\n", uid);
+                printf("    UID=%s: subscribed failed - invalid user\n", uid);
             return send_udp(fd, res_eusr, addr, addrlen) <= 0;
         } else if (res.status == SUBS_EFULL) {
             if (args.verbose)
-                printf("UID=%s: subscribed failed - full\n", uid);
+                printf("    UID=%s: subscribed failed - full\n", uid);
             return send_udp(fd, res_efull, addr, addrlen) <= 0;
         } else if (res.status == SUBS_EGNAME) {
             if (args.verbose)
-                printf("UID=%s: subscribed failed - invalid group name\n", uid);
+                printf("    UID=%s: subscribed failed - invalid group name\n", uid);
             return send_udp(fd, res_gname, addr, addrlen) <= 0;
         } else if (res.status == SUBS_NEW) {
             sprintf(res_new.data, "RGS NEW %02d\n", res.gid);
             if (args.verbose)
-                printf("UID=%s: new group: %02d - \"%s\"\n", uid, res.gid, gname);
+                printf("    UID=%s: new group: %02d - \"%s\"\n", uid, res.gid, gname);
             return send_udp(fd, res_new, addr, addrlen) <= 0;
         }
     }
     if (args.verbose)
-        printf("UID=%s: failed to subscribe\n", uid);
+        printf("    UID=%s: failed to subscribe\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -248,7 +247,7 @@ bool unsubscribe_request(int fd, args_t args, buffer_t request, const struct soc
     bool valid_gid = request.data[12] == '\n' && is_gid(gid);
     if (args_count < 2 || !valid_uid || !valid_gid) {
         if (args.verbose)
-            printf("Bad request for unsubscribing\n");
+            printf("    Bad request for unsubscribing\n");
         return send_udp(fd, res_nok, addr, addrlen) <= 0;
     }
 
@@ -258,20 +257,20 @@ bool unsubscribe_request(int fd, args_t args, buffer_t request, const struct soc
     if (!error) {
         if (res == UNS_OK) {
             if (args.verbose)
-                printf("UID=%s: unsubscribed group %s\n", uid, gid);
+                printf("    UID=%s: unsubscribed group %s\n", uid, gid);
             return send_udp(fd, res_ok, addr, addrlen) <= 0;
         } else if (res == UNS_EGRP) {
             if (args.verbose)
-                printf("UID=%s: unsubscribed failed - invalid group\n", uid);
+                printf("    UID=%s: unsubscribed failed - invalid group\n", uid);
             return send_udp(fd, res_egrp, addr, addrlen) <= 0;
         } else if (res == UNS_EUSR) {
             if (args.verbose)
-                printf("UID=%s: unsubscribed failed - invalid user\n", uid);
+                printf("    UID=%s: unsubscribed failed - invalid user\n", uid);
             return send_udp(fd, res_eusr, addr, addrlen) <= 0;
         }
     }
     if (args.verbose)
-        printf("UID=%s: failed to unsubscribe\n", uid);
+        printf("    UID=%s: failed to unsubscribe\n", uid);
     return (send_udp(fd, res_nok, addr, addrlen) <= 0) || error;
 }
 
@@ -315,7 +314,7 @@ bool list_groups_request(int fd, args_t args, const struct sockaddr *addr, sockl
     // Sends the reply with the list of groups
     if (!error) {
         if (args.verbose)
-            printf("listed groups\n");
+            printf("    listed groups\n");
         return send_udp(fd, res, addr, addrlen) <= 0;
     }
     return true;
@@ -340,7 +339,7 @@ bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct
     bool valid_uid = request.data[9] == '\n' && is_uid(uid);
     if (args_count < 1 || !valid_uid) {
         if (args.verbose)
-            printf("Bad request for listing group users\n");
+            printf("    Bad request for listing group users\n");
         return send_udp(fd, res_eusr, addr, addrlen) <= 0;
     }
 
@@ -355,11 +354,11 @@ bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct
 
     if (failed) {
         if (args.verbose)
-            printf("UID=%s: failed to list subscribed groups: invalid user\n", uid);
+            printf("    UID=%s: failed to list subscribed groups: invalid user\n", uid);
         return send_udp(fd, res_eusr, addr, addrlen) <= 0;
     } else if (list.len == 0) {
         if (args.verbose)
-            printf("UID=%s: listed subscribed groups\n", uid);
+            printf("    UID=%s: listed subscribed groups\n", uid);
         return send_udp(fd, res_empty, addr, addrlen) <= 0;
     }
 
@@ -392,7 +391,7 @@ bool list_subscribed_request(int fd, args_t args, buffer_t request, const struct
     // Sends the reply with the list of the subscribed groups
     if (!error) {
         if (args.verbose)
-            printf("UID=%s: listed subscribed groups\n", uid);
+            printf("    UID=%s: listed subscribed groups\n", uid);
         return send_udp(fd, res, addr, addrlen) <= 0;
     }
 
@@ -416,7 +415,7 @@ bool subscribed_users(int fd, args_t args) {
         return true;
     if (!is_gid(gid) || request.data[2] != '\n') {
         if (args.verbose)
-            printf("Bad request for listing group users\n");
+            printf("    Bad request for listing group users\n");
         return send_tcp(fd, res_nok);
     }
 
@@ -429,7 +428,7 @@ bool subscribed_users(int fd, args_t args) {
     int gid_num = atoi(gid);
     if (gid_num == 0 || gid_num > group_count) {
         if (args.verbose)
-            printf("Bad request for listing group users\n");
+            printf("    Bad request for listing group users\n");
         return send_tcp(fd, res_nok);
     }
 
@@ -455,7 +454,7 @@ bool subscribed_users(int fd, args_t args) {
         return true;
 
     if (args.verbose)
-        printf("listed group %s subscribed users\n", gid);
+        printf("    listed group %s subscribed users\n", gid);
 
     // Starts constructing and sending the reply
     buffer_t res = {.data = "RUL OK ", .size = 7};
@@ -521,7 +520,7 @@ bool post_request(int fd, args_t args) {
         text_size > 0 && text_size <= 240 && request.data[9 + text_size_len] == ' ';
     if (!valid_uid || !valid_gid || !valid_text_size || args_count < 3) {
         if (args.verbose)
-            printf("failed to post: invalid args\n");
+            printf("    failed to post: invalid args\n");
         return send_tcp(fd, res_nok);
     }
     offset++;
@@ -531,7 +530,7 @@ bool post_request(int fd, args_t args) {
     check_if_logged_in(uid, &logged_in);
     if (!logged_in) {
         if (args.verbose)
-            printf("UID=%s: failed to post: user not logged in\n", uid);
+            printf("    UID=%s: failed to post: user not logged in\n", uid);
         return send_tcp(fd, res_nok);
     }
 
@@ -544,7 +543,7 @@ bool post_request(int fd, args_t args) {
     int gid_num = atoi(gid);
     if (gid_num == 0 || gid_num > group_count) {
         if (args.verbose)
-            printf("UID=%s: failed to post: invalid gid\n", uid);
+            printf("    UID=%s: failed to post: invalid gid\n", uid);
         return send_tcp(fd, res_nok);
     }
 
@@ -553,7 +552,7 @@ bool post_request(int fd, args_t args) {
     check_if_subscribed(gid, uid, &subscribed);
     if (!subscribed) {
         if (args.verbose)
-            printf("UID=%s: failed to post: not subscribed to group\n", uid);
+            printf("    UID=%s: failed to post: not subscribed to group\n", uid);
         return send_tcp(fd, res_nok);
     }
 
@@ -574,7 +573,7 @@ bool post_request(int fd, args_t args) {
 
     if (failed) {
         if (args.verbose)
-            printf("UID=%s: failed to post in group %s: maximum messages in group\n", uid, gid);
+            printf("    UID=%s: failed to post in group %s: maximum messages in group\n", uid, gid);
         return send_tcp(fd, res_nok);
     }
 
@@ -585,7 +584,7 @@ bool post_request(int fd, args_t args) {
     /* Checks if the message includes a file */
     if (!has_file) {
         if (args.verbose)
-            printf("UID=%s: post group %s: \"%s\"\n", uid, gid, text);
+            printf("    UID=%s: post group %s: \"%s\"\n", uid, gid, text);
         return send_tcp(fd, res);
     }
 
@@ -642,7 +641,7 @@ bool post_request(int fd, args_t args) {
     fclose(posted_file);
 
     if (args.verbose)
-        printf("UID=%s: post group %s: \"%s\" %s\n", uid, gid, text, file_name);
+        printf("    UID=%s: post group %s: \"%s\" %s\n", uid, gid, text, file_name);
 
     return send_tcp(fd, res);
 }
@@ -676,7 +675,7 @@ bool retrieve_request(int fd, args_t args) {
     check_if_logged_in(uid, &logged_in);
     if (!logged_in) {
         if (args.verbose)
-            printf("UID=%s: failed to retrieve: user not logged in\n", uid);
+            printf("    UID=%s: failed to retrieve: user not logged in\n", uid);
         return send_tcp(fd, res_nok);
     }
 
@@ -689,7 +688,7 @@ bool retrieve_request(int fd, args_t args) {
     int gid_num = atoi(gid);
     if (gid_num == 0 || gid_num > group_count) {
         if (args.verbose)
-            printf("UID=%s: failed to retrieve: invalid gid\n", uid);
+            printf("    UID=%s: failed to retrieve: invalid gid\n", uid);
         return send_tcp(fd, res_nok);
     }
 
@@ -697,7 +696,7 @@ bool retrieve_request(int fd, args_t args) {
     int current_mid = atoi(mid);
     if (current_mid == 0) {
         if (args.verbose)
-            printf("UID=%s: failed to retrieve: invalid mid\n", uid);
+            printf("    UID=%s: failed to retrieve: invalid mid\n", uid);
         return send_tcp(fd, res_nok);
     }
 
@@ -706,7 +705,7 @@ bool retrieve_request(int fd, args_t args) {
     check_if_subscribed(gid, uid, &subscribed);
     if (!subscribed) {
         if (args.verbose)
-            printf("UID=%s: failed to retrieve: user not subscribed\n", uid);
+            printf("    UID=%s: failed to retrieve: user not subscribed\n", uid);
         return send_tcp(fd, res_nok);
     }
     
@@ -722,7 +721,7 @@ bool retrieve_request(int fd, args_t args) {
 
     if (message_count == 0) {
         if (args.verbose)
-            printf("UID=%s: no messages retrieved from group %s\n", uid, gid);
+            printf("    UID=%s: no messages retrieved from group %s\n", uid, gid);
         return send_tcp(fd, res_eof);
     }
 
@@ -737,7 +736,7 @@ bool retrieve_request(int fd, args_t args) {
     send_tcp(fd, message);
 
     if (args.verbose)
-        printf("UID=%s: retrieved from group %s, %d message(s)\n", uid, gid, message_count);
+        printf("    UID=%s: retrieved from group %s, %d message(s)\n", uid, gid, message_count);
     
     // Retrieves the messages 
     current_mid--;

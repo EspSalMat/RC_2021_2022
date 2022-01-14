@@ -88,6 +88,7 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
     sprintf(user_logged_in, "%s/%s_login.txt", user_dirname, uid);
     sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
 
+    // Checks if user exists
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
@@ -119,6 +120,7 @@ bool user_login(const char *uid, const char *pass, bool *failed) {
     sprintf(user_logged_in, "%s/%s_login.txt", user_dirname, uid);
     sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
 
+    // Checks if user exists
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
@@ -149,6 +151,7 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
     sprintf(user_logged_in, "%s/%s_login.txt", user_dirname, uid);
     sprintf(user_pass, "%s/%s_pass.txt", user_dirname, uid);
 
+    // Checks if user exists
     struct stat st;
     if (stat(user_dirname, &st) != 0) {
         *failed = true;
@@ -160,6 +163,7 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
     else if (*failed)
         return false;
 
+    // Checks if user is logged in
     if (stat(user_logged_in, &st) != 0) {
         *failed = true;
         return errno != ENOENT;
@@ -177,6 +181,7 @@ bool count_messages(const char *dir_name, int *message_count, int *lock_fd) {
     if (msg_dir == NULL)
         return true;
     
+    // Locks messages directory to avoid the creation of new messages after counting
     if (lock_fd != NULL) {
         *lock_fd = dirfd(msg_dir);
         flock(*lock_fd, LOCK_EX);
@@ -222,6 +227,7 @@ bool list_groups(grouplist_t *list) {
         if (group_name_file == NULL)
             return true;
 
+        // Saves group name
         if (fscanf(group_name_file, "%24s", list->names[gid - 1]) < 0)
             return true;
 
@@ -234,6 +240,7 @@ bool list_groups(grouplist_t *list) {
         int message_count;
         if (count_messages(msg_name, &message_count, NULL))
             return true;
+        // Saves the MID of the last message
         list->mids[gid - 1] = message_count;
 
         list->len++;
@@ -276,6 +283,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
     char group_name_file[30];
     sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
 
+    // Checks if the user is logged in
     struct stat st;
     if (stat(user_logged_in, &st) != 0) {
         result->status = SUBS_EUSR;
@@ -287,11 +295,13 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
     if (count_groups("GROUPS", &groups_count))
         return true;
 
+    // Checks if group id is valid
     if (group_id > groups_count) {
         result->status = SUBS_EGRP;
         return false;
     }
 
+    // Checks if a new group should be created
     if (group_id == 0) {
         if (groups_count == 99) {
             result->status = SUBS_EFULL;
@@ -322,6 +332,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
         if (fclose(gname_file) == EOF)
             return true;
     } else {
+        // Subscribing an existing group
         char group_name[25];
         sprintf(group_dir, "GROUPS/%s", gid);
         sprintf(group_name_file, "%s/%s_name.txt", group_dir, gid);
@@ -333,6 +344,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
         if (fscanf(gname_file, "%24s", group_name) < 0)
             return true;
 
+        // Compares group name to check if it is valid
         if (strcmp(group_name, gname) != 0) {
             result->status = SUBS_EGNAME;
             return false;
@@ -342,6 +354,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
             return true;
     }
 
+    // Creates the subscription file for the user
     char user_subscribe_file[20];
     sprintf(user_subscribe_file, "%s/%s.txt", group_dir, uid);
     FILE *subscribe_file = fopen(user_subscribe_file, "w");
@@ -360,6 +373,7 @@ bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result, b
     char user_logged_in[35];
     sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
 
+    // Checks if the user is logged in
     struct stat st;
     if (stat(user_logged_in, &st) != 0 && !unr) {
         *result = UNS_EUSR;
@@ -391,6 +405,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
     char user_logged_in[35];
     sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
 
+    // Checks if the user is logged in
     struct stat st;
     if (stat(user_logged_in, &st) != 0) {
         *failed = true;
@@ -402,7 +417,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
         return true;
 
     struct dirent *gid_dir;
-
+    // Loops through the groups directories finding subscription files
     while ((gid_dir = readdir(groups_dir)) != NULL) {
         // Continue if it's not a group id
         if (!is_gid(gid_dir->d_name))
@@ -427,6 +442,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
         if (group_name_file == NULL)
             return true;
 
+        // Saves the name of a subscribed group
         if (fscanf(group_name_file, "%24s", list->names[gid - 1]) < 0)
             return true;
 
@@ -439,7 +455,8 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
         int message_count;
         if (count_messages(msg_name, &message_count, NULL))
             return true;
-
+        
+        // Saves the MID of the last message
         list->mids[gid - 1] = message_count;
         list->subscribed[gid - 1] = true;
         list->len++;
@@ -481,7 +498,7 @@ bool create_message(const char *gid, const char *author, const char *text, messa
     char text_file_name[31];
     sprintf(messages_dir, "GROUPS/%s/MSG", gid);
 
-    // LOCK
+    // Counts the number of messages, locking the messages directory until the creation of the new message
     int lock_fd;
     int count;
     count_messages(messages_dir, &count, &lock_fd);
@@ -491,6 +508,7 @@ bool create_message(const char *gid, const char *author, const char *text, messa
         return false;
     }
 
+    // Creates a new directory for the new message
     data->mid = count + 1;
     sprintf(data->message_dirname, "%s/%04d", messages_dir, count + 1);
     if (mkdir(data->message_dirname, 0700) == -1) {
@@ -498,11 +516,13 @@ bool create_message(const char *gid, const char *author, const char *text, messa
         return true;
     }
     
+    // Unlocks the messages directory
     flock(lock_fd, LOCK_UN);
 
     sprintf(author_file_name, "%s/A U T H O R.txt", data->message_dirname);
     sprintf(text_file_name, "%s/T E X T.txt", data->message_dirname);
 
+    // Creates author file
     FILE *author_file = fopen(author_file_name, "w");
     if (author_file == NULL)
         return true;
@@ -511,6 +531,7 @@ bool create_message(const char *gid, const char *author, const char *text, messa
     if (fclose(author_file) == EOF)
         return true;
 
+    // Creates text file
     FILE *text_file = fopen(text_file_name, "w");
     if (text_file == NULL)
         return true;
@@ -531,12 +552,14 @@ bool is_message_complete(const char *dir_name, bool *is_complete) {
     *is_complete = true;
 
     struct stat st;
+    // Checks if the author file exists
     bool exist = stat(author_file_name, &st) == 0;
     if (!exist && errno != ENOENT)
         return true;
     else if (!exist)
         *is_complete = false;
 
+    // Checks if the text file exists
     exist = stat(text_file_name, &st) == 0;
     if (!exist && errno != ENOENT)
         return true;
