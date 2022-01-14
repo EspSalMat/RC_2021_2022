@@ -181,7 +181,8 @@ bool count_messages(const char *dir_name, int *message_count, int *lock_fd) {
     if (msg_dir == NULL)
         return true;
     
-    // Locks messages directory to avoid the creation of new messages after counting
+    // Locks messages directory when creating a new message
+    // to avoid the creation of new messages after counting
     if (lock_fd != NULL) {
         *lock_fd = dirfd(msg_dir);
         flock(*lock_fd, LOCK_EX);
