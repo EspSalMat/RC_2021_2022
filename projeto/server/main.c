@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "../utils/sockets.h"
@@ -36,6 +37,7 @@ args_t parse_args(int argc, char **argv) {
     return args;
 }
 
+/* Prints the ip and port from the client socket address */
 void print_ip_and_port(struct sockaddr_in *addr) {
     char ip[INET_ADDRSTRLEN];
     uint16_t port;
@@ -43,10 +45,12 @@ void print_ip_and_port(struct sockaddr_in *addr) {
     inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
     port = htons(addr->sin_port);
 
-    printf("from %s:%d -> ", ip, port);
+    printf("from %s:%d : \n", ip, port);
 }
 
+/* Handles UDP requests from the client */
 bool handle_udp_request(int fd, args_t args) {
+    // Buffer object for holding the UDP request message
     buffer_t request;
     create_buffer(request, 39);
 
@@ -54,12 +58,15 @@ bool handle_udp_request(int fd, args_t args) {
     struct sockaddr_in addr;
     socklen_t addrlen;
 
+    // Receive the message and write to the request buffer
     ssize_t n = receive_udp(fd, request, &addr, &addrlen);
     if (n <= 0)
         return true;
 
     if (args.verbose)
         print_ip_and_port(&addr);
+    
+    // Buffer object for ERR reply
     buffer_t res_err = {.data = "ERR\n", .size = 4};
 
     if (strncmp(request.data, "REG ", 4) == 0)
@@ -84,6 +91,7 @@ bool handle_udp_request(int fd, args_t args) {
     return false;
 }
 
+/* Accepts a new TCP connetion */
 bool accept_new_connection(int fd, int *client_fd, args_t args) {
     struct sockaddr_in addr;
     socklen_t addrlen;
@@ -91,13 +99,14 @@ bool accept_new_connection(int fd, int *client_fd, args_t args) {
     *client_fd = accept(fd, (struct sockaddr *)&addr, &addrlen);
     if (*client_fd == -1)
         return true;
-    
+
     if (args.verbose)
         print_ip_and_port(&addr);
 
     return false;
 }
 
+/* Handles TCP requests from the client */
 bool handle_tcp_request(int fd, args_t args) {
     buffer_t res_err = {.data = "ERR\n", .size = 4};
     buffer_t prefix;
@@ -130,11 +139,12 @@ int main(int argc, char **argv) {
     args_t args = parse_args(argc, argv);
     int udp_fd, tcp_fd;
 
-    // UDP
+    // Create a UDP socket
     udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_fd == -1)
         exit(EXIT_FAILURE);
 
+    // Get server address for UDP socket
     struct addrinfo *udp_addr = get_server_address(NULL, args.port, SOCK_DGRAM);
     if (udp_addr == NULL) {
         close(udp_fd);
@@ -148,13 +158,14 @@ int main(int argc, char **argv) {
 
     freeaddrinfo(udp_addr);
 
-    // TCP
+    // Create a TCP socket
     tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (tcp_fd == -1) {
         close(udp_fd);
         exit(EXIT_FAILURE);
     }
 
+    // Get server address for TCP socket
     struct addrinfo *tcp_addr = get_server_address(NULL, args.port, SOCK_DGRAM);
     if (tcp_addr == NULL) {
         close(udp_fd);
@@ -178,6 +189,17 @@ int main(int argc, char **argv) {
 
     freeaddrinfo(tcp_addr);
 
+    // Set the signal handler to ignore SIGCHLD
+    struct sigaction act;
+    memset(&act, 0, sizeof act);
+    act.sa_handler = SIG_IGN;
+    if (sigaction(SIGCHLD, &act, NULL) == -1) {
+        close(udp_fd);
+        close(tcp_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Make fd_set's for using select
     fd_set current_sockets, ready_sockets;
     FD_ZERO(&current_sockets);
     FD_SET(udp_fd, &current_sockets);
@@ -195,7 +217,8 @@ int main(int argc, char **argv) {
             if (handle_udp_request(udp_fd, args))
                 should_exit = true;
         }
-
+        
+        // Accept TCP request and handle it in a child process
         if (FD_ISSET(tcp_fd, &ready_sockets)) {
             int client_fd;
             if (accept_new_connection(tcp_fd, &client_fd, args)) {
@@ -205,6 +228,12 @@ int main(int argc, char **argv) {
                 if (pid == -1) {
                     should_exit = true;
                 } else if (pid == 0) {
+                    // Set signal handler for SIGPIPE in child process
+                    if (sigaction(SIGPIPE, &act, NULL) == -1) {
+                        close(client_fd);
+                        exit(EXIT_FAILURE);
+                    }
+
                     if (handle_tcp_request(client_fd, args))
                         exit(EXIT_FAILURE);
                     else

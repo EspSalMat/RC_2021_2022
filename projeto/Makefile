@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall
+CFLAGS=
 
 .PHONY: all clean
 
@@ -12,7 +12,8 @@ proj_54.zip: clean
 	cp -r client tmp/client
 	cp -r server tmp/server
 	cp -r utils tmp/utils
-	sed '10,18d' Makefile > tmp/Makefile
+	cp 2021_2022_proj_auto_avaliacao.xlsx tmp/2021_2022_proj_auto_avaliacao.xlsx
+	sed '10,19d' Makefile > tmp/Makefile
 	cd tmp && zip -r ../proj_54.zip .
 	rm -rf tmp
 

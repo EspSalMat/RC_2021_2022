@@ -10,6 +10,7 @@
 #include "../utils/validate.h"
 #include "commands.h"
 
+/* Check a user's password */
 bool check_password(const char *user_pass, const char *pass, bool *failed) {
     char realpass[9];
 
@@ -29,6 +30,7 @@ bool check_password(const char *user_pass, const char *pass, bool *failed) {
     return false;
 }
 
+/* Create user's directory and files */
 bool register_user(const char *uid, const char *pass, bool *duplicate) {
     char user_dirname[20];
     char user_pass[34];
@@ -55,6 +57,7 @@ bool register_user(const char *uid, const char *pass, bool *duplicate) {
     return false;
 }
 
+/* Unsubscribes a user from every group */
 bool unsubscribe_all(const char *uid, const char *dir_name) {
     DIR *groups_dir = opendir(dir_name);
     if (groups_dir == NULL)
@@ -75,6 +78,7 @@ bool unsubscribe_all(const char *uid, const char *dir_name) {
     return false;
 }
 
+/* Deletes the files of a user and unsubscribes them from all groups */
 bool unregister_user(const char *uid, const char *pass, bool *failed) {
     char user_dirname[20];
     char user_pass[34];
@@ -105,6 +109,7 @@ bool unregister_user(const char *uid, const char *pass, bool *failed) {
     return true;
 }
 
+/* Creates a file to mark the user as logged in */
 bool user_login(const char *uid, const char *pass, bool *failed) {
     char user_dirname[20];
     char user_pass[34];
@@ -134,6 +139,7 @@ bool user_login(const char *uid, const char *pass, bool *failed) {
     return false;
 }
 
+/* Deletes the logged in file of the user */
 bool user_logout(const char *uid, const char *pass, bool *failed) {
     char user_dirname[20];
     char user_pass[34];
@@ -165,6 +171,7 @@ bool user_logout(const char *uid, const char *pass, bool *failed) {
     return true;
 }
 
+/* Counts the number of messages in a group directory */
 bool count_messages(const char *dir_name, int *message_count, int *lock_fd) {
     DIR *msg_dir = opendir(dir_name);
     if (msg_dir == NULL)
@@ -192,6 +199,7 @@ bool count_messages(const char *dir_name, int *message_count, int *lock_fd) {
     return false;
 }
 
+/* Returns a list of the existing groups */
 bool list_groups(grouplist_t *list) {
     list->len = 0;
     DIR *groups_dir = opendir("GROUPS");
@@ -239,6 +247,7 @@ bool list_groups(grouplist_t *list) {
     return false;
 }
 
+/* Counts the number of group directories */
 bool count_groups(const char *dir_name, int *group_count) {
     DIR *groups_dir = opendir(dir_name);
     if (groups_dir == NULL)
@@ -258,6 +267,7 @@ bool count_groups(const char *dir_name, int *group_count) {
     return false;
 }
 
+/* Subscribes a user to a group */
 bool user_subscribe(const char *uid, const char *gid, const char *gname, subscribe_t *result) {
     result->status = SUBS_OK;
     char user_logged_in[35];
@@ -344,6 +354,7 @@ bool user_subscribe(const char *uid, const char *gid, const char *gname, subscri
     return false;
 }
 
+/* Unsubscribes a user from a group */
 bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result, bool unr) {
     *result = UNS_OK;
     char user_logged_in[35];
@@ -374,6 +385,7 @@ bool user_unsubscribe(const char *uid, const char *gid, unsubscribe_t *result, b
     return false;
 }
 
+/* Returns a list of groups a user is subscribed to */
 bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) {
     list->len = 0;
     char user_logged_in[35];
@@ -441,6 +453,7 @@ bool subscribed_groups(const char *uid, subscribedgroups_t *list, bool *failed) 
     return false;
 }
 
+/* Checks if a user is logged in */
 bool check_if_logged_in(const char *uid, bool *success) {
     char user_logged_in[35];
     sprintf(user_logged_in, "USERS/%s/%s_login.txt", uid, uid);
@@ -450,6 +463,7 @@ bool check_if_logged_in(const char *uid, bool *success) {
     return !success && errno != ENOENT;
 }
 
+/* Checks if a user is subscribed to a group */
 bool check_if_subscribed(const char *gid, const char *uid, bool *result) {
     char user_subscribed[20];
     sprintf(user_subscribed, "GROUPS/%s/%s.txt", gid, uid);
@@ -459,6 +473,7 @@ bool check_if_subscribed(const char *gid, const char *uid, bool *result) {
     return !result && errno != ENOENT;
 }
 
+/* Creates the directory and files for a new message */
 bool create_message(const char *gid, const char *author, const char *text, message_t *data,
                     bool *failed) {
     char messages_dir[14];
@@ -507,6 +522,7 @@ bool create_message(const char *gid, const char *author, const char *text, messa
     return false;
 }
 
+/* Checks if a message is complete */
 bool is_message_complete(const char *dir_name, bool *is_complete) {
     char author_file_name[35];
     char text_file_name[31];
@@ -530,6 +546,7 @@ bool is_message_complete(const char *dir_name, bool *is_complete) {
     return false;
 }
 
+/* Counts the number of complete messages since a given a message id */
 bool count_complete_msgs(const char *dir_name, int first_mid, int *count) {
     DIR *msg_dir = opendir(dir_name);
     if (msg_dir == NULL)
@@ -553,6 +570,9 @@ bool count_complete_msgs(const char *dir_name, int first_mid, int *count) {
         
         if (is_complete)
             (*count)++;
+        
+        if (*count == 20)
+            break;
     }
 
     if (closedir(msg_dir) == -1)
